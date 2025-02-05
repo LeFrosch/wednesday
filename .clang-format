@@ -1,4 +1,9 @@
 ---
-BasedOnStyle: Mozilla
+BasedOnStyle: LLVM
 IndentWidth: 4
 ColumnLimit: 120
+---
+Language: Cpp
+AllowShortFunctionsOnASingleLine: None
+PointerAlignment: Left
+

@@ -1,9 +1,0 @@
-load("@rules_cc//cc:defs.bzl", "cc_library")
-
-cc_library(
-    name = "snow",
-    hdrs = ["snow.h"],
-    visibility = ["//visibility:public"],
-    defines = ["SNOW_ENABLED"],
-    testonly = 1,
-)
