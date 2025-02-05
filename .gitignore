@@ -1,0 +1,5 @@
+# clion bazel plugin directory
+.clwb
+
+# bazel output directories
+bazel-*
