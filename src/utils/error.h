@@ -1,5 +1,6 @@
 #pragma once
 
+#include <assert.h>
 #include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -16,20 +17,27 @@
 
 #define failure(CODE, ...)                                                                                             \
     do {                                                                                                               \
-        error_push(CODE, __VA_ARGS__);                                                                                 \
+        error_push(CODE, ##__VA_ARGS__);                                                                               \
         return CODE;                                                                                                   \
-    } while (0)
-
-#define ensure(CALL, ...)                                                                                              \
-    do {                                                                                                               \
-        if (!CALL) {                                                                                                   \
-            failed(EINVAL, msg(#CALL " "), ##__VA_ARGS__);                                                             \
-        }                                                                                                              \
     } while (0)
 
 #define msg(MSG) errors_append_message(": " MSG)
 
 #define with(EXPR, FORMAT) errors_append_message(", " #EXPR " = " FORMAT, EXPR)
+
+#define ensure(CALL, ...)                                                                                              \
+    do {                                                                                                               \
+        if (!(CALL)) {                                                                                                 \
+            failure(EINVAL, msg(#CALL " "), ##__VA_ARGS__);                                                            \
+        }                                                                                                              \
+    } while (0)
+
+#define ensure_no_errors()                                                                                             \
+    do {                                                                                                               \
+        if (errors_get_count() > 0) {                                                                                  \
+            failure(EINVAL, msg("expected no errors"));                                                                \
+        }                                                                                                              \
+    } while (0)
 
 void errors_push_new(const char* file, uint32_t line, const char* func, int32_t code);
 

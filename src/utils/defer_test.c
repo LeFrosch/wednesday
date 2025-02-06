@@ -6,7 +6,7 @@ result_t mark(int* ptr) {
     return SUCCESS;
 }
 
-enabel_defer(mark);
+enabel_defer(mark, (int*));
 
 describe(defer) {
     before_each() {

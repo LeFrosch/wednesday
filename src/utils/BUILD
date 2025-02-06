@@ -23,3 +23,13 @@ we_test(
     srcs = ["error_test.c"],
     deps = [":error"],
 )
+
+we_library(
+    name = "utils",
+    hdrs = ["utils.h"],
+    visibility = ["//src:__subpackages__"],
+    deps = [
+        ":defer",
+        ":error",
+    ],
+)
