@@ -1,6 +1,7 @@
 #pragma once
 
 #include <errno.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 #define result_t __attribute__((warn_unused_result)) int32_t
@@ -30,9 +31,9 @@
 
 #define with(EXPR, FORMAT) errors_append_message(", " #EXPR " = " FORMAT, EXPR)
 
-void errors_push_new(const char *file, uint32_t line, const char *func, int32_t code);
+void errors_push_new(const char* file, uint32_t line, const char* func, int32_t code);
 
-__attribute__((__format__(__printf__, 1, 2))) void errors_append_message(const char *format, ...);
+__attribute__((__format__(__printf__, 1, 2))) void errors_append_message(const char* format, ...);
 
 void errors_print(void);
 
@@ -40,6 +41,6 @@ void errors_clear(void);
 
 size_t errors_get_count(void);
 
-result_t *errors_get_results(void);
+result_t* errors_get_results(void);
 
 const char** errors_get_messages(void);
