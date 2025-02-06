@@ -32,7 +32,7 @@
 #define subdesc(...) while (0)
 #define it(...) while (0)
 #define test(...) while (0)
-#define defer(...)
+// #define defer(...)
 #define before_each(...) while (0)
 #define after_each(...) while (0)
 #define snow_fail_update(...)
@@ -1168,16 +1168,17 @@ cleanup:
 	for (; _snow.in_case; _snow_case_end(1))
 #define test it
 
-#define defer(...) \
-	do { \
-		jmp_buf _snow_jmp; \
-		if (setjmp(_snow_jmp) == 0) { \
-			_snow_case_defer_push(_snow_jmp); \
-		} else { \
-			__VA_ARGS__; \
-			_snow_case_defer_jmp(); \
-		} \
-	} while (0)
+// wednesday has its own defer implementation
+// #define defer(...) \
+// 	do { \
+// 		jmp_buf _snow_jmp; \
+// 		if (setjmp(_snow_jmp) == 0) { \
+// 			_snow_case_defer_push(_snow_jmp); \
+// 		} else { \
+// 			__VA_ARGS__; \
+// 			_snow_case_defer_jmp(); \
+// 		} \
+// 	} while (0)
 
 #define before_each() \
 	_snow.current_desc->has_before_jmp = 1; \

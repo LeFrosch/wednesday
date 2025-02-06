@@ -3,6 +3,13 @@ load("//:defs.bzl", "we_library", "we_test")
 we_library(
     name = "defer",
     hdrs = ["defer.h"],
+    deps = [":error"],
+)
+
+we_test(
+    name = "defer_test",
+    srcs = ["defer_test.c"],
+    deps = [":defer"],
 )
 
 we_library(
