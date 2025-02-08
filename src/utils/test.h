@@ -1,10 +1,12 @@
 #pragma once
 
-#define assertsuc(CALL)                                                                                                \
+#define assertsuc(call)                                                                                                \
     do {                                                                                                               \
-        asserteq(errors_get_count(), 0, "an error was already recorded");                                              \
+        if (errors_get_count() > 0) {                                                                                  \
+            fail("Unexpected error before call: %s", errors_get_message());                                            \
+        }                                                                                                              \
                                                                                                                        \
-        if (!CALL) {                                                                                                   \
+        if (!call) {                                                                                                   \
             const char* msg = errors_get_message();                                                                    \
             assertneq(msg, NULL, "Expected an error to be recorded on failure");                                       \
                                                                                                                        \

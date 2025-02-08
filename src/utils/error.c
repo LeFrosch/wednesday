@@ -127,3 +127,23 @@ errors_get_message(void) {
 
     return errors_messages[0];
 }
+
+const char*
+errors_get_trace(void) {
+    if (errors_count == 0) {
+        return NULL;
+    }
+
+    _Thread_local static char buffer[MAX_BUFFER_SIZE];
+
+    char* head = buffer;
+    for (size_t i = 0; i < errors_count; i++) {
+        strcpy(head, errors_messages[i]);
+
+        head += strlen(errors_messages[i]);
+        *(head++) = '\n';
+    }
+    *(head - 1) = 0;
+
+    return buffer;
+}

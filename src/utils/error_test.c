@@ -31,4 +31,17 @@ describe(error) {
 
         assert(strstr(msg, "Input/output error"));
     }
+
+    it("trace contains all messages") {
+        error_push(EIO, msg("test error 1"));
+        error_push(EIO, msg("test error 2"));
+        error_push(EIO, msg("test error 3"));
+
+        const char* trace = errors_get_trace();
+        assertneq(trace, NULL);
+
+        assert(strstr(trace, "error 1"));
+        assert(strstr(trace, "error 2"));
+        assert(strstr(trace, "error 3"));
+    }
 }

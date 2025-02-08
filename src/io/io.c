@@ -77,7 +77,7 @@ create_directories(const char* path) {
 }
 
 result_t
-create_file(const char* path, file_t* file) {
+file_open(const char* path, file_t* file) {
     ensure(path);
     ensure(file);
     ensure_no_errors();
@@ -99,8 +99,41 @@ create_file(const char* path, file_t* file) {
     ensure(open_parent(path, &file->parent));
     errdefer(close, file->parent);
 
+    // sync the parent directory to ensure the created file is persisted
     if (fsync(file->parent) != 0) {
         failure(errno, msg("could not sync parent directory"), with(path, "%s"));
+    }
+
+    return SUCCESS;
+}
+
+result_t
+file_set_size(const file_t* file, const uint64_t size) {
+    ensure(file);
+    ensure_no_errors();
+
+    if (ftruncate(file->handle, (off_t)size) != 0) {
+        // cast required for linux / mac compatibility
+        failure(errno, msg("could not truncate file"), with((unsigned long long) size, "%llu"));
+    }
+
+    if (fsync(file->parent) != 0) {
+        failure(errno, msg("could not sync parent directory"));
+    }
+
+    return SUCCESS;
+}
+
+result_t
+file_close(const file_t* file) {
+    ensure(file);
+    ensure_no_errors();
+
+    if (close(file->handle) != 0) {
+        failure(errno, msg("could not close file"));
+    }
+    if (close(file->parent) != 0) {
+        failure(errno, msg("could not close parent of file"));
     }
 
     return SUCCESS;

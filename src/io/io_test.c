@@ -9,17 +9,18 @@ describe(io) {
     }
 
     it("error when parameter is invalid") {
-        assert(!create_file("file", NULL));
+        assert(!file_open("file", NULL));
 
         file_t file;
-        assert(!create_file(NULL, &file));
+        assert(!file_open(NULL, &file));
 
         asserteq(errors_get_count(), 2);
     }
 
     it("can create a new file") {
         file_t file;
-        assertsuc(create_file("file", &file));
+        assertsuc(file_open("file", &file));
+        assertsuc(file_close(&file));
 
         assert(file.handle);
         assert(file.parent);
@@ -27,7 +28,8 @@ describe(io) {
 
     it("can create a new file in new directory") {
         file_t file;
-        assertsuc(create_file("dir/dir/file", &file));
+        assertsuc(file_open("dir/dir/file", &file));
+        assertsuc(file_close(&file));
 
         assert(file.handle);
         assert(file.parent);

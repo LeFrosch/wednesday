@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdio.h>
 #include <unistd.h>
 
 #include "utils/defer.h"
@@ -12,4 +13,4 @@ defer_free(const defer_t* def) {
     }
 }
 
-enabel_defer(close, *(int*));
+enabel_defer(close, *(int*), 0);

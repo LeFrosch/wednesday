@@ -7,7 +7,7 @@ mark(int* ptr) {
     return SUCCESS;
 }
 
-enabel_defer(mark, (int*));
+enabel_defer(mark, (int*), SUCCESS);
 
 describe(defer) {
     before_each() {
@@ -27,6 +27,15 @@ describe(defer) {
         {
             errdefer(mark, i);
         }
+        asserteq(i, 0);
+    }
+
+    it("errdefer does not execute when not called") {
+        int i = 0;
+        do {
+            break;
+            errdefer(mark, i);
+        } while (0);
         asserteq(i, 0);
     }
 

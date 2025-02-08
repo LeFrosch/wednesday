@@ -57,3 +57,6 @@ errors_get_count(void);
 
 const char*
 errors_get_message(void);
+
+const char*
+errors_get_trace(void);
