@@ -17,23 +17,25 @@ _Thread_local static const char* errors_messages[MAX_ERRORS];
 _Thread_local static int32_t errors_codes[MAX_ERRORS];
 _Thread_local static size_t errors_count;
 
-__attribute__((__format__(__printf__, 4, 0))) static bool try_vsprintf(char* buffer, const char* end, size_t* chars,
-                                                                       const char* format, va_list args) {
+__attribute__((__format__(__printf__, 4, 0))) static bool
+try_vsprintf(char* buffer, const char* end, size_t* chars, const char* format, va_list args) {
     const size_t len = end - buffer;
 
     const int ret = vsnprintf(buffer, len, format, args);
-    if (ret < 0)
+    if (ret < 0) {
         return false; // encoding error
-    if ((size_t) ret >= len)
+    }
+    if ((size_t)ret >= len) {
         return false; // buffer overflow
+    }
 
-    *chars += ret;
+    *chars += ret + 1;
 
     return true;
 }
 
-__attribute__((__format__(__printf__, 4, 5))) static bool try_sprintf(char* buffer, const char* end, size_t* chars,
-                                                                      const char* format, ...) {
+__attribute__((__format__(__printf__, 4, 5))) static bool
+try_sprintf(char* buffer, const char* end, size_t* chars, const char* format, ...) {
     va_list args;
     va_start(args, format);
     const bool suc = try_vsprintf(buffer, end, chars, format, args);
@@ -42,7 +44,8 @@ __attribute__((__format__(__printf__, 4, 5))) static bool try_sprintf(char* buff
     return suc;
 }
 
-void errors_push_new(const char* file, const uint32_t line, const char* func, const int32_t code) {
+void
+errors_push_new(const char* file, const uint32_t line, const char* func, const int32_t code) {
     if (errors_count >= MAX_ERRORS || out_of_memory) {
         return;
     }
@@ -67,10 +70,14 @@ void errors_push_new(const char* file, const uint32_t line, const char* func, co
     }
 }
 
-__attribute__((__format__(__printf__, 1, 2))) void errors_append_message(const char* format, ...) {
+__attribute__((__format__(__printf__, 1, 2))) void
+errors_append_message(const char* format, ...) {
     if (errors_count == 0 || out_of_memory) {
         return;
     }
+
+    // overwrite the 0 byte again
+    messages_offset -= 1;
 
     char* start = messages_buffer + messages_offset;
     const char* end = messages_buffer + MAX_BUFFER_SIZE;
@@ -85,7 +92,8 @@ __attribute__((__format__(__printf__, 1, 2))) void errors_append_message(const c
     }
 }
 
-void errors_print(void) {
+void
+errors_print(void) {
     for (size_t i = 0; i < errors_count; i++) {
         printf("%s\n", errors_messages[i]);
     }
@@ -95,7 +103,8 @@ void errors_print(void) {
     }
 }
 
-void errors_clear(void) {
+void
+errors_clear(void) {
     memset(messages_buffer, 0, sizeof(messages_buffer));
     messages_offset = 0;
     out_of_memory = false;
@@ -105,15 +114,16 @@ void errors_clear(void) {
     errors_count = 0;
 }
 
-size_t errors_get_count(void) {
+size_t
+errors_get_count(void) {
     return errors_count;
 }
 
-result_t* errors_get_results(void) {
-    return errors_codes;
-}
+const char*
+errors_get_message(void) {
+    if (errors_count == 0) {
+        return NULL;
+    }
 
-const char** errors_get_messages(void) {
-    return errors_messages;
+    return errors_messages[0];
 }
-

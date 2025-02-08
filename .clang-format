@@ -1,9 +1,16 @@
 ---
-BasedOnStyle: LLVM
+BasedOnStyle: Mozilla
 IndentWidth: 4
 ColumnLimit: 120
+
 ---
 Language: Cpp
-AllowShortFunctionsOnASingleLine: None
-PointerAlignment: Left
 
+BreakBeforeBraces: Attach
+
+AllowAllArgumentsOnNextLine: true
+BinPackArguments: false
+AlignAfterOpenBracket: AlwaysBreak
+
+InsertBraces: true
+InsertNewlineAtEOF: true

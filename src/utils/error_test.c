@@ -13,7 +13,6 @@ describe(error) {
     it("can record error") {
         error_push(EIO, msg("test error"));
         asserteq(errors_get_count(), 1);
-        asserteq(errors_get_results()[0], EIO);
     }
 
     it("can record at most 32 errors") {
@@ -26,6 +25,10 @@ describe(error) {
 
     it("translates error code") {
         error_push(EIO, msg("test error"));
-        assert(strstr(errors_get_messages()[0], "Input/output error"));
+
+        const char* msg = errors_get_message();
+        assertneq(msg, NULL);
+
+        assert(strstr(msg, "Input/output error"));
     }
 }

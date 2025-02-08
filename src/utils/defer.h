@@ -15,11 +15,11 @@ typedef struct {
 
 #define defer(fun, args)                                                                                               \
     defer_t concat(defer_, __COUNTER__)                                                                                \
-        __attribute__((unused, __cleanup__(defer_##fun))) = {.arg = (void*)&args, .on_error = false}
+      __attribute__((unused, __cleanup__(defer_##fun))) = { .arg = (void*)&args, .on_error = false }
 
 #define errdefer(fun, args)                                                                                            \
     defer_t concat(defer_, __COUNTER__)                                                                                \
-        __attribute__((unused, __cleanup__(defer_##fun))) = {.arg = (void*)&args, .on_error = true}
+      __attribute__((unused, __cleanup__(defer_##fun))) = { .arg = (void*)&args, .on_error = true }
 
 #define enabel_defer(fun, type)                                                                                        \
     __attribute__((unused)) static inline void defer_##fun(const defer_t* def) {                                       \
@@ -33,6 +33,7 @@ typedef struct {
     }                                                                                                                  \
     int _defer_unused_variable_for_semicolon_##__COUNTER__
 
-__attribute__((unused)) static inline bool defer_should_run(const defer_t* def) {
+__attribute__((unused)) static inline bool
+defer_should_run(const defer_t* def) {
     return !def->on_error || errors_get_count() > 0;
 }

@@ -1,7 +1,8 @@
 #include "defer.h"
 #include "snow.h"
 
-result_t mark(int* ptr) {
+result_t
+mark(int* ptr) {
     *ptr = 1;
     return SUCCESS;
 }
