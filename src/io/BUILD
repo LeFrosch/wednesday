@@ -10,5 +10,8 @@ we_library(
 we_test(
     name = "io_test",
     srcs = ["io_test.c"],
-    deps = [":io"],
+    deps = [
+        ":io",
+        "//src/utils:test",
+    ],
 )

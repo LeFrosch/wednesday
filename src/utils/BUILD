@@ -25,17 +25,26 @@ we_test(
 )
 
 we_library(
-    name = "test",
-    hdrs = ["test.h"],
-)
-
-we_library(
     name = "utils",
     hdrs = ["utils.h"],
     visibility = ["//src:__subpackages__"],
     deps = [
         ":defer",
         ":error",
-        ":test",
+    ],
+)
+
+we_library(
+    name = "test",
+    testonly = 1,
+    hdrs = [
+        "test.h",
+        "utils.h",
+    ],
+    visibility = ["//src:__subpackages__"],
+    deps = [
+        ":defer",
+        ":error",
+        "//third_party/snow:lib",
     ],
 )

@@ -26,7 +26,7 @@ open_parent(const char* path, int* fd) {
     }
 
     if (*fd == -1) {
-        failure(errno, msg("could not open parent directory"), with(path, "%s"));
+        failure(errno, msg("could not open parent directory"), with_str(path));
     }
 
     return SUCCESS;
@@ -39,7 +39,7 @@ sync_parent(const char* path) {
     defer(close, fd);
 
     if (fsync(fd) != 0) {
-        failure(errno, msg("could not sync parent directory"), with(path, "%s"));
+        failure(errno, msg("could not sync parent directory"), with_str(path));
     }
 
     return SUCCESS;
@@ -58,12 +58,12 @@ create_directories(const char* path) {
 
         if (ret == 0) {
             if (!S_ISDIR(st.st_mode)) {
-                failure(errno, msg("expected a directory"), with(directory, "%s"));
+                failure(errno, msg("expected a directory"), with_str(directory));
             }
         } else {
             // the directory probably does not exist
             if (mkdir(directory, S_IRWXU) != 0 && errno != EEXIST) {
-                failure(errno, msg("cannot create directory"), with(directory, "%s"));
+                failure(errno, msg("cannot create directory"), with_str(directory));
             }
 
             // ensure the new directory is persisted by syncing the parent
@@ -84,6 +84,8 @@ file_open(const char* path, file_t* file) {
 
     ensure(create_directories(path));
 
+    // flags: O_DIRECT | O_DSYNC would allow for durable writes, no need for fsync
+
     file->handle = open(
       path,
       // open file for read and write, and close on fork
@@ -92,7 +94,7 @@ file_open(const char* path, file_t* file) {
       S_IRUSR | S_IWUSR);
 
     if (!file->handle) {
-        failure(errno, msg("could not open file"), with(path, "%s"));
+        failure(errno, msg("could not open file"), with_str(path));
     }
     errdefer(close, file->handle);
 
@@ -101,7 +103,7 @@ file_open(const char* path, file_t* file) {
 
     // sync the parent directory to ensure the created file is persisted
     if (fsync(file->parent) != 0) {
-        failure(errno, msg("could not sync parent directory"), with(path, "%s"));
+        failure(errno, msg("could not sync parent directory"), with_str(path));
     }
 
     return SUCCESS;
@@ -113,8 +115,7 @@ file_set_size(const file_t* file, const uint64_t size) {
     ensure_no_errors();
 
     if (ftruncate(file->handle, (off_t)size) != 0) {
-        // cast required for linux / mac compatibility
-        failure(errno, msg("could not truncate file"), with((unsigned long long) size, "%llu"));
+        failure(errno, msg("could not truncate file"), with_size(size));
     }
 
     if (fsync(file->parent) != 0) {
@@ -134,6 +135,67 @@ file_close(const file_t* file) {
     }
     if (close(file->parent) != 0) {
         failure(errno, msg("could not close parent of file"));
+    }
+
+    return SUCCESS;
+}
+
+result_t
+file_write(const file_t* file, uint64_t offset, const char* data, size_t size) {
+    ensure(file);
+    ensure(data);
+    ensure_no_errors();
+
+    while (size > 0) {
+        const ssize_t ret = pwrite(file->handle, data, size, (off_t)offset);
+        if (ret == -1) {
+            failure(errno, msg("could not write to file"), with_size(size), with_size(offset));
+        }
+
+        size -= (size_t)ret;
+        data += ret;
+        offset += (uint64_t)ret;
+    }
+
+    return SUCCESS;
+}
+
+result_t
+file_read(const file_t* file, uint64_t offset, char* data, size_t size) {
+    ensure(file);
+    ensure(data);
+    ensure_no_errors();
+
+    while (size > 0) {
+        const ssize_t ret = pread(file->handle, data, size, (off_t)offset);
+        if (ret == -1) {
+            if (errno == EINTR) {
+                continue;
+            }
+
+            failure(errno, msg("could not read from file"), with_size(size), with_size(offset));
+        }
+        if (ret == 0) {
+            failure(EINVAL, msg("unexpected end of file"), with_size(size), with_size(offset));
+        }
+
+        size -= (size_t)ret;
+        data += ret;
+        offset += (uint64_t)ret;
+    }
+
+    return SUCCESS;
+}
+
+result_t
+file_sync(const file_t* file) {
+    ensure(file);
+    ensure_no_errors();
+
+    // TODO: use fdatasync on linux
+    // TODO: use fcntl(..., F_FULLFSYNC) on mac
+    if (fsync(file->handle) != 0) {
+        failure(errno, msg("could not sync file"));
     }
 
     return SUCCESS;

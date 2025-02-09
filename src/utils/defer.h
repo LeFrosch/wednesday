@@ -14,16 +14,16 @@ typedef struct {
 } defer_t;
 
 // workaround to ensure the __COUNTER__ macro is expanded before the concatenation
-#define concat_(a, b) a##b
-#define concat(a, b) concat_(a, b)
+#define CONCAT_(a, b) a##b
+#define CONCAT(a, b) CONCAT_(a, b)
 
 #define defer(fun, args)                                                                                               \
-    defer_t concat(defer_, __COUNTER__) __attribute__((unused, __cleanup__(defer_##fun))) = {                          \
+    defer_t CONCAT(defer_, __COUNTER__) __attribute__((unused, __cleanup__(defer_##fun))) = {                          \
         .arg = (void*)&args, .on_error = false, .line = __LINE__, .file = __FILE__                                     \
     }
 
 #define errdefer(fun, args)                                                                                            \
-    defer_t concat(defer_, __COUNTER__) __attribute__((unused, __cleanup__(defer_##fun))) = {                          \
+    defer_t CONCAT(defer_, __COUNTER__) __attribute__((unused, __cleanup__(defer_##fun))) = {                          \
         .arg = (void*)&args, .on_error = true, .line = __LINE__, .file = __FILE__                                      \
     }
 

@@ -26,6 +26,10 @@
 
 #define with(expr, format) errors_append_message(", " #expr " = " format, expr)
 
+#define with_str(expr) errors_append_message(", " #expr " = '%s'", expr)
+
+#define with_size(expr) errors_append_message(", " #expr " = %lu", (size_t)expr)
+
 #define ensure(call, ...)                                                                                              \
     do {                                                                                                               \
         if (!(call)) {                                                                                                 \

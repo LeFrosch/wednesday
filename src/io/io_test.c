@@ -1,7 +1,12 @@
 #include "io.h"
 #include "snow.h"
 #include "utils/test.h"
-#include "utils/utils.h"
+
+// workaround to ensure the __LINE__ macro is expanded
+#define STRINGIFY_(a) #a
+#define STRINGIFY(a) STRINGIFY_(a)
+
+#define unique_file STRINGIFY(__LINE__)
 
 describe(io) {
     before_each() {
@@ -19,7 +24,7 @@ describe(io) {
 
     it("can create a new file") {
         file_t file;
-        assertsuc(file_open("file", &file));
+        assertsuc(file_open(unique_file, &file));
         assertsuc(file_close(&file));
 
         assert(file.handle);
@@ -33,5 +38,29 @@ describe(io) {
 
         assert(file.handle);
         assert(file.parent);
+    }
+
+    it("can write and read from file") {
+        file_t file;
+        assertsuc(file_open(unique_file, &file));
+        defer(file_close, file);
+
+        const char* data = "test";
+        const size_t size = strlen(data) + 1;
+        assertsuc(file_write(&file, 0, data, size));
+
+        char* read = alloca(size);
+        assertsuc(file_read(&file, 0, read, size));
+
+        asserteq_str(data, read);
+    }
+
+    it("error when reading after EOF") {
+        file_t file;
+        assertsuc(file_open(unique_file, &file));
+        defer(file_close, file);
+
+        char read[10];
+        asserterr(file_read(&file, 0, read, sizeof(read)));
     }
 }
