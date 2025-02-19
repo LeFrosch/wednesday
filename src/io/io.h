@@ -8,7 +8,7 @@ typedef struct {
 } file_t;
 
 result_t
-file_open(const char* path, file_t* file);
+file_open(file_t* file, const char* path);
 
 result_t
 file_set_size(const file_t* file, uint64_t size);

@@ -14,17 +14,17 @@ describe(io) {
     }
 
     it("error when parameter is invalid") {
-        assert(!file_open("file", NULL));
+        assert(!file_open(NULL, "file"));
 
         file_t file;
-        assert(!file_open(NULL, &file));
+        assert(!file_open(&file, NULL));
 
         asserteq(errors_get_count(), 2);
     }
 
     it("can create a new file") {
         file_t file;
-        assertsuc(file_open(unique_file, &file));
+        assertsuc(file_open(&file, unique_file));
         assertsuc(file_close(&file));
 
         assert(file.handle);
@@ -33,7 +33,7 @@ describe(io) {
 
     it("can create a new file in new directory") {
         file_t file;
-        assertsuc(file_open("dir/dir/file", &file));
+        assertsuc(file_open(&file, "dir/dir/file"));
         assertsuc(file_close(&file));
 
         assert(file.handle);
@@ -42,7 +42,7 @@ describe(io) {
 
     it("can write and read from file") {
         file_t file;
-        assertsuc(file_open(unique_file, &file));
+        assertsuc(file_open(&file, unique_file));
         defer(file_close, file);
 
         const char* data = "test";
@@ -57,7 +57,7 @@ describe(io) {
 
     it("error when reading after EOF") {
         file_t file;
-        assertsuc(file_open(unique_file, &file));
+        assertsuc(file_open(&file, unique_file));
         defer(file_close, file);
 
         char read[10];

@@ -1,17 +1,17 @@
 load("//:defs.bzl", "we_library", "we_test")
 
 we_library(
-    name = "io",
-    srcs = ["io.c"],
-    hdrs = ["io.h"],
+    name = "pager",
+    srcs = ["pager.c"],
+    hdrs = ["pager.h"],
     deps = ["//src/utils"],
 )
 
 we_test(
     name = "test",
-    srcs = ["io_test.c"],
+    srcs = ["pager_test.c"],
     deps = [
-        ":io",
+        ":pager",
         "//src/utils:test",
     ],
 )

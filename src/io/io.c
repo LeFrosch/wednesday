@@ -77,7 +77,7 @@ create_directories(const char* path) {
 }
 
 result_t
-file_open(const char* path, file_t* file) {
+file_open(file_t* file, const char* path) {
     ensure(path);
     ensure(file);
     ensure_no_errors();
@@ -93,7 +93,7 @@ file_open(const char* path, file_t* file) {
       // give the user read and write permission
       S_IRUSR | S_IWUSR);
 
-    if (!file->handle) {
+    if (file->handle == -1) {
         failure(errno, msg("could not open file"), with_str(path));
     }
     errdefer(close, file->handle);
