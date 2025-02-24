@@ -18,11 +18,23 @@ def we_library(name, **kwargs):
         **kwargs
     )
 
+TEST_COPTS = [
+    "-Wno-strict-prototypes",
+    "-fsanitize=address",
+    "-fsanitize=undefined",
+]
+
+TEST_LOPTS = [
+    "-fsanitize=address",
+    "-fsanitize=undefined",
+]
+
 def we_test(name, deps = [], **kwargs):
     cc_test(
         name = name,
         size = "small",
-        copts = COPTS + ["-Wno-strict-prototypes"],
+        copts = COPTS + TEST_COPTS,
+        linkopts = TEST_LOPTS,
         deps = deps + ["//third_party/snow:main"],
         **kwargs
     )
