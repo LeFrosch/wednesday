@@ -3,7 +3,8 @@
 #include "utils/test.h"
 
 #define PAGE_SIZE 256
-#define MAX_PAGES 10
+#define MAX_PAGES 20
+#define EXTRA_SIZE 64
 
 describe(pager) {
     before_each() {
@@ -12,51 +13,52 @@ describe(pager) {
 
     it("can open and close pager") {
         pager_t* pager;
-        assertsuc(pager_open(&pager, PAGE_SIZE, MAX_PAGES));
+        assertsuc(pager_open(&pager, PAGE_SIZE, MAX_PAGES, EXTRA_SIZE));
         assert(pager != NULL);
 
-        assertsuc(pager_close(pager));
+        assertsuc(pager_close(&pager));
+        assert(pager == NULL);
     }
 
     it("can get a new page") {
         pager_t* pager;
-        assertsuc(pager_open(&pager, PAGE_SIZE, MAX_PAGES));
+        assertsuc(pager_open(&pager, PAGE_SIZE, MAX_PAGES, EXTRA_SIZE));
+        defer(pager_close, pager);
 
-        info_t* info;
-        assertsuc(pager_get(pager, 0, &info));
-        assert(info != NULL);
+        unsigned char* page;
+        assertsuc(pager_get(pager, 0, &page));
+        assert(page != NULL);
 
-        asserteq(info->number, 0);
-
-        assertsuc(pager_close(pager));
+        asserteq(pager_get_page_number(page), 0);
     }
 
     it("can get a cached page") {
         pager_t* pager;
-        assertsuc(pager_open(&pager, PAGE_SIZE, MAX_PAGES));
+        assertsuc(pager_open(&pager, PAGE_SIZE, MAX_PAGES, EXTRA_SIZE));
+        defer(pager_close, pager);
 
-        info_t* info_a;
-        assertsuc(pager_get(pager, 0, &info_a));
-        info_t* info_b;
-        assertsuc(pager_get(pager, 0, &info_b));
+        unsigned char* page_a;
+        assertsuc(pager_get(pager, 0, &page_a));
+        unsigned char* page_b;
+        assertsuc(pager_get(pager, 0, &page_b));
 
-        assert(info_a == info_b);
-
-        assertsuc(pager_close(pager));
+        assert(page_a == page_b);
+        asserteq(pager_get_page_number(page_a), 0);
+        asserteq(pager_get_page_number(page_b), 0);
     }
-
 
     it("can get two new pages") {
         pager_t* pager;
-        assertsuc(pager_open(&pager, PAGE_SIZE, MAX_PAGES));
+        assertsuc(pager_open(&pager, PAGE_SIZE, MAX_PAGES, EXTRA_SIZE));
+        defer(pager_close, pager);
 
-        info_t* info_a;
-        assertsuc(pager_get(pager, 0, &info_a));
-        info_t* info_b;
-        assertsuc(pager_get(pager, 1, &info_b));
+        unsigned char* page_a;
+        assertsuc(pager_get(pager, 0, &page_a));
+        unsigned char* page_b;
+        assertsuc(pager_get(pager, 1, &page_b));
 
-        assert(info_a != info_b);
-
-        assertsuc(pager_close(pager));
+        assert(page_a != page_b);
+        asserteq(pager_get_page_number(page_a), 0);
+        asserteq(pager_get_page_number(page_b), 1);
     }
 }
