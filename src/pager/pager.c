@@ -43,6 +43,7 @@ struct pager_t {
     uint32_t page_size;                  /* the size of one page */
     uint32_t max_pages;                  /* the maximum amount of pages in the cache */
     uint32_t extra_size;                 /* the size of extra data associated with each page */
+    uint32_t page_count;                 /* the number of pages in the entire database */
     page_t* page_list;                   /* linked list of all pages */
     page_t* page_table[PAGE_TABLE_SIZE]; /* hash map from page number to pages */
 };
@@ -62,6 +63,7 @@ pager_open(pager_t** out, const uint32_t page_size, const uint32_t max_pages, co
     pager->page_size = page_size;
     pager->max_pages = max_pages;
     pager->extra_size = extra_size;
+    pager->page_count = 0;
 
     *out = pager;
     return SUCCESS;
@@ -91,7 +93,11 @@ pager_get(pager_t* pager, const uint32_t page_no, unsigned char** out) {
 
     page = malloc(sizeof(page_t) + pager->page_size);
     ensure(page);
+    memset(page, 0, sizeof(page_t) + pager->page_size);
     errdefer(free, page);
+
+    // increment the total page count
+    pager->page_count++;
 
     // populate data fields
     page->number = page_no;
@@ -114,7 +120,7 @@ pager_get(pager_t* pager, const uint32_t page_no, unsigned char** out) {
     return SUCCESS;
 }
 
-uint32_t
+pgno_t
 pager_get_page_number(const unsigned char* page) {
     assert(page);
     return data_to_page(page)->number;
@@ -124,6 +130,18 @@ void*
 pager_get_extra_data(const unsigned char* page) {
     assert(page);
     return data_to_page(page)->extra_data;
+}
+
+uint32_t
+pager_get_page_size(pager_t* pager) {
+    assert(pager);
+    return pager->page_size;
+}
+
+uint32_t
+pager_get_page_count(pager_t* pager) {
+    assert(pager);
+    return pager->page_count;
 }
 
 result_t

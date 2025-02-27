@@ -7,6 +7,8 @@ COPTS = [
     "-Werror",
     "-Wextra",
     "-Wpedantic",
+
+    # allow the enure macro to be called without args
     "-Wno-gnu-zero-variadic-macro-arguments",
 ]
 

@@ -4,6 +4,7 @@ we_library(
     name = "pager",
     srcs = ["pager.c"],
     hdrs = ["pager.h"],
+    visibility = ["//src:__subpackages__"],
     deps = ["//src/utils"],
 )
 
