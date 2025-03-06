@@ -25,12 +25,25 @@ we_test(
 )
 
 we_library(
+    name = "math",
+    hdrs = ["math.h"],
+    deps = [":error"],
+)
+
+we_test(
+    name = "math_test",
+    srcs = ["math_test.c"],
+    deps = [":math"],
+)
+
+we_library(
     name = "utils",
     hdrs = ["utils.h"],
     visibility = ["//src:__subpackages__"],
     deps = [
         ":defer",
         ":error",
+        ":math",
     ],
 )
 
@@ -45,6 +58,7 @@ we_library(
     deps = [
         ":defer",
         ":error",
+        ":math",
         "//third_party/snow:lib",
     ],
 )

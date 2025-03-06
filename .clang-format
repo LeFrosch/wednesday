@@ -10,7 +10,7 @@ BreakBeforeBraces: Attach
 
 AllowAllArgumentsOnNextLine: true
 BinPackArguments: false
-AlignAfterOpenBracket: AlwaysBreak
+AlignAfterOpenBracket: BlockIndent
 
 InsertBraces: true
 InsertNewlineAtEOF: true
