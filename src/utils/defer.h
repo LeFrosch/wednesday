@@ -37,7 +37,7 @@ typedef struct {
             errors_push_new(def->file, def->line, def->on_error ? "errdefer" : "defer", errno ? errno : EINVAL);       \
         }                                                                                                              \
     }                                                                                                                  \
-    int _defer_unused_variable_for_semicolon
+    __attribute__((unused)) static int _defer_unused_variable_for_semicolon
 
 __attribute__((unused)) static inline bool
 defer_should_run(const defer_t* def) {

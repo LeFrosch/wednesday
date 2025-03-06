@@ -1,7 +1,10 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 
 COPTS = [
+    # gnu extensions required for snow tests
     "-std=gnu17",
+
+    # enable more extensive warnings
     "-pedantic",
     "-Wall",
     "-Werror",
@@ -21,7 +24,10 @@ def we_library(name, **kwargs):
     )
 
 TEST_COPTS = [
+    # required for snow tests
     "-Wno-strict-prototypes",
+
+    # run test with sanitizers, repeat as link options
     "-fsanitize=address",
     "-fsanitize=undefined",
 ]
