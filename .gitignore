@@ -1,0 +1,11 @@
+# build artifacts
+build/
+lib.*
+test
+
+# mac artifacts
+*.dSYM/
+
+# CLion
+.idea/
+

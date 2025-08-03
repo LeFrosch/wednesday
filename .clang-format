@@ -1,0 +1,19 @@
+---
+BasedOnStyle: Mozilla
+IndentWidth: 4
+ColumnLimit: 120
+PenaltyBreakAssignment: 100000
+
+---
+Language: Cpp
+
+BreakBeforeBraces: Attach
+AlwaysBreakAfterReturnType: None
+AlwaysBreakAfterDefinitionReturnType: None
+
+AllowAllArgumentsOnNextLine: true
+BinPackArguments: false
+AlignAfterOpenBracket: BlockIndent
+
+InsertBraces: true
+InsertNewlineAtEOF: true
