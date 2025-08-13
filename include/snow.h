@@ -114,14 +114,16 @@ struct _snow_arr {
     size_t allocated;
 };
 
-__attribute__((unused)) static void _snow_arr_init(struct _snow_arr* arr, size_t size) {
+__attribute__((unused)) static void
+_snow_arr_init(struct _snow_arr* arr, size_t size) {
     arr->elem_size = size;
     arr->elems = NULL;
     arr->length = 0;
     arr->allocated = 0;
 }
 
-__attribute__((unused)) static void _snow_arr_grow(struct _snow_arr* arr, size_t size) {
+__attribute__((unused)) static void
+_snow_arr_grow(struct _snow_arr* arr, size_t size) {
     if (arr->allocated >= size) {
         return;
     }
@@ -130,11 +132,13 @@ __attribute__((unused)) static void _snow_arr_grow(struct _snow_arr* arr, size_t
     arr->elems = realloc(arr->elems, arr->allocated * arr->elem_size);
 }
 
-__attribute__((unused)) static void* _snow_arr_get(struct _snow_arr* arr, size_t index) {
+__attribute__((unused)) static void*
+_snow_arr_get(struct _snow_arr* arr, size_t index) {
     return arr->elems + arr->elem_size * index;
 }
 
-__attribute__((unused)) static void _snow_arr_push(struct _snow_arr* arr, void* elem) {
+__attribute__((unused)) static void
+_snow_arr_push(struct _snow_arr* arr, void* elem) {
     if (arr->allocated == 0) {
         arr->allocated = 8;
         arr->elems = malloc(arr->allocated * arr->elem_size);
@@ -146,17 +150,20 @@ __attribute__((unused)) static void _snow_arr_push(struct _snow_arr* arr, void* 
     arr->length += 1;
 }
 
-__attribute__((unused)) static void* _snow_arr_pop(struct _snow_arr* arr) {
+__attribute__((unused)) static void*
+_snow_arr_pop(struct _snow_arr* arr) {
     void* elem = _snow_arr_get(arr, arr->length - 1);
     arr->length -= 1;
     return elem;
 }
 
-__attribute__((unused)) static void* _snow_arr_top(struct _snow_arr* arr) {
+__attribute__((unused)) static void*
+_snow_arr_top(struct _snow_arr* arr) {
     return _snow_arr_get(arr, arr->length - 1);
 }
 
-__attribute__((unused)) static void _snow_arr_reset(struct _snow_arr* arr) {
+__attribute__((unused)) static void
+_snow_arr_reset(struct _snow_arr* arr) {
     free(arr->elems);
     arr->elems = NULL;
     arr->length = 0;
@@ -167,8 +174,10 @@ __attribute__((unused)) static void _snow_arr_reset(struct _snow_arr* arr) {
  * Snow Core
  */
 
-void snow_break(void);
-void snow_rerun_failed(void);
+void
+snow_break(void);
+void
+snow_rerun_failed(void);
 
 enum {
     _SNOW_OPT_VERSION,
@@ -291,7 +300,8 @@ extern int _snow_inited;
  */
 
 static int _snow_spaces_depth_prev = -1;
-__attribute__((unused)) static char* _snow_spaces(int depth) {
+__attribute__((unused)) static char*
+_snow_spaces(int depth) {
     if (depth != _snow_spaces_depth_prev) {
         _snow_arr_grow(&_snow.bufs.spaces, depth * 2 + 1);
         _snow.bufs.spaces.elems[depth * 2] = '\0';
@@ -303,7 +313,8 @@ __attribute__((unused)) static char* _snow_spaces(int depth) {
 }
 
 #ifndef SNOW_DUMMY_TIMER
-__attribute__((unused)) static double _snow_now(void) {
+__attribute__((unused)) static double
+_snow_now(void) {
     if (!_snow.opts[_SNOW_OPT_TIMER].boolval) {
         return 0;
     }
@@ -313,7 +324,8 @@ __attribute__((unused)) static double _snow_now(void) {
     return tv.tv_sec * 1000.0 + tv.tv_usec / 1000.0;
 }
 #else
-__attribute__((unused)) static double _snow_now(void) {
+__attribute__((unused)) static double
+_snow_now(void) {
     static double time;
     time += 1000;
     return time;
@@ -326,7 +338,8 @@ __attribute__((unused)) static double _snow_now(void) {
 
 #define _snow_print(...) fprintf(_snow.print.file, __VA_ARGS__)
 
-__attribute__((unused)) static void _snow_print_timer(double start_time) {
+__attribute__((unused)) static void
+_snow_print_timer(double start_time) {
     double msec = _snow_now() - start_time;
     if (msec < 0) {
         msec = 0;
@@ -340,7 +353,8 @@ __attribute__((unused)) static void _snow_print_timer(double start_time) {
     }
 }
 
-__attribute__((unused)) static void _snow_print_case_begin(void) {
+__attribute__((unused)) static void
+_snow_print_case_begin(void) {
     if (_snow.opts[_SNOW_OPT_QUIET].boolval) {
         return;
     }
@@ -371,7 +385,8 @@ __attribute__((unused)) static void _snow_print_case_begin(void) {
     }
 }
 
-__attribute__((unused)) static void _snow_print_case_success(void) {
+__attribute__((unused)) static void
+_snow_print_case_success(void) {
     if (_snow.opts[_SNOW_OPT_QUIET].boolval) {
         return;
     }
@@ -400,7 +415,8 @@ __attribute__((unused)) static void _snow_print_case_success(void) {
     _snow_print("\n");
 }
 
-__attribute__((unused)) static char* _snow_print_case_failure(void) {
+__attribute__((unused)) static char*
+_snow_print_case_failure(void) {
     char* spaces = _snow_spaces(_snow.desc_stack.length - 1);
 
     if (_snow.print.need_cr) {
@@ -421,7 +437,8 @@ __attribute__((unused)) static char* _snow_print_case_failure(void) {
     return spaces;
 }
 
-__attribute__((unused)) static void _snow_print_desc_begin_index(size_t index) {
+__attribute__((unused)) static void
+_snow_print_desc_begin_index(size_t index) {
     if (index > 0) {
         struct _snow_desc* parent = _snow_arr_get(&_snow.desc_stack, index - 1);
         if (!parent->printed) {
@@ -444,14 +461,16 @@ __attribute__((unused)) static void _snow_print_desc_begin_index(size_t index) {
     desc->printed = 1;
 }
 
-__attribute__((unused)) static void _snow_print_desc_begin(void) {
+__attribute__((unused)) static void
+_snow_print_desc_begin(void) {
     if (_snow.opts[_SNOW_OPT_QUIET].boolval) {
         return;
     }
     _snow_print_desc_begin_index(_snow.desc_stack.length - 1);
 }
 
-__attribute__((unused)) static void _snow_print_desc_end(void) {
+__attribute__((unused)) static void
+_snow_print_desc_end(void) {
     if (_snow.opts[_SNOW_OPT_QUIET].boolval) {
         return;
     }
@@ -520,7 +539,8 @@ __attribute__((unused)) static void _snow_print_desc_end(void) {
         _snow.linenum = __LINE__;                                                                                      \
     } while (0)
 
-__attribute__((unused)) static void _snow_init(void) {
+__attribute__((unused)) static void
+_snow_init(void) {
     _snow_inited = 1;
     memset(&_snow, 0, sizeof(_snow));
     _snow.exit_code = EXIT_SUCCESS;
@@ -547,7 +567,8 @@ __attribute__((unused)) static void _snow_init(void) {
     _snow.print.file = stdout;
 }
 
-__attribute__((unused)) static void _snow_desc_begin(const char* name) {
+__attribute__((unused)) static void
+_snow_desc_begin(const char* name) {
     struct _snow_desc desc = { 0 };
     desc.name = name;
     desc.start_time = _snow_now();
@@ -622,7 +643,8 @@ __attribute__((unused)) static void _snow_desc_begin(const char* name) {
     }
 }
 
-__attribute__((unused)) static void _snow_desc_end(void) {
+__attribute__((unused)) static void
+_snow_desc_end(void) {
     if (_snow.current_desc->printed && !_snow.opts[_SNOW_OPT_LIST].boolval) {
         _snow_print_desc_end();
     }
@@ -710,7 +732,8 @@ __attribute__((unused)) static void _snow_desc_end(void) {
 /*
  * Called after a test case block is done.
  */
-__attribute__((unused)) static void _snow_case_end(int success) {
+__attribute__((unused)) static void
+_snow_case_end(int success) {
     if (!_snow.in_case) {
         return;
     }
@@ -732,7 +755,8 @@ __attribute__((unused)) static void _snow_case_end(int success) {
  * Called by defer, to register a new jmp_buf
  * on the defer stack.
  */
-__attribute__((unused)) static void _snow_case_defer_push(jmp_buf jmp) {
+__attribute__((unused)) static void
+_snow_case_defer_push(jmp_buf jmp) {
     _snow_arr_push(&_snow.current_case.defers, jmp);
 }
 
@@ -740,7 +764,8 @@ __attribute__((unused)) static void _snow_case_defer_push(jmp_buf jmp) {
  * Called when a defer is done.
  * Will jump back to _snow_case_begin.
  */
-__attribute__((unused)) static void _snow_case_defer_jmp(void) {
+__attribute__((unused)) static void
+_snow_case_defer_jmp(void) {
     longjmp(_snow.current_case.defer_jmp_ret, 1);
 }
 
@@ -748,7 +773,8 @@ __attribute__((unused)) static void _snow_case_defer_jmp(void) {
  * Called when a before_each is done.
  * Will jump back to _snow_case_begin.
  */
-__attribute__((unused)) static void _snow_before_each_end(void) {
+__attribute__((unused)) static void
+_snow_before_each_end(void) {
     longjmp(_snow.current_case.before_jmp_ret, 1);
 }
 
@@ -756,14 +782,16 @@ __attribute__((unused)) static void _snow_before_each_end(void) {
  * Called when a after_each is done.
  * Will jump back to _snow_case_begin.
  */
-__attribute__((unused)) static void _snow_after_each_end(void) {
+__attribute__((unused)) static void
+_snow_after_each_end(void) {
     longjmp(_snow.current_case.after_jmp_ret, 1);
 }
 
 /*
  * Usage
  */
-__attribute__((unused)) static void _snow_usage(char* argv0) {
+__attribute__((unused)) static void
+_snow_usage(char* argv0) {
     _snow_print("Usage: %s [options]            Run all tests.\n", argv0);
     _snow_print("       %s [options] <test>...  Run specific tests.\n", argv0);
     _snow_print("       %s -v|--version         Print version and exit.\n", argv0);
@@ -820,7 +848,8 @@ __attribute__((unused)) static void _snow_usage(char* argv0) {
 /*
  * Parse a single argument
  */
-__attribute__((unused)) static int _snow_parse_args(char** args, int num) {
+__attribute__((unused)) static int
+_snow_parse_args(char** args, int num) {
     int opts_done = 0;
     for (int i = 1; i < num; ++i) {
         char* arg = args[i];
@@ -883,7 +912,8 @@ __attribute__((unused)) static int _snow_parse_args(char** args, int num) {
  * and cleans up.
  */
 
-__attribute__((unused)) static int snow_main_function(int argc, char** argv) {
+__attribute__((unused)) static int
+snow_main_function(int argc, char** argv) {
 
     // There might be no tests, so we should init _snow here too
     if (!_snow_inited) {
@@ -1120,19 +1150,19 @@ cleanup:
 
 #ifndef SNOW_ENABLED
 
-#define describe(name) __attribute__((unused)) static void _snow_unused_##name()
+#define describe(name) __attribute__((unused)) static void _snow_unused_##name(void)
 
 #else
 
 #define describe(name)                                                                                                 \
     static void snow_test_##name(void);                                                                                \
-    __attribute__((constructor(__COUNTER__ + 101))) static void _snow_constructor_##name() {                           \
+    __attribute__((constructor(__COUNTER__ + 101))) static void _snow_constructor_##name(void) {                           \
         if (!_snow_inited)                                                                                             \
             _snow_init();                                                                                              \
         struct _snow_desc_func df = { #name, &snow_test_##name };                                                      \
         _snow_arr_push(&_snow.desc_funcs, &df);                                                                        \
     }                                                                                                                  \
-    __attribute__((optnone)) __attribute__((optimize(0))) static void snow_test_##name()
+    __attribute__((optnone)) __attribute__((optimize(0))) static void snow_test_##name(void)
 
 #endif // SNOW_ENABLED
 
@@ -1148,7 +1178,6 @@ cleanup:
         }                                                                                                              \
     }                                                                                                                  \
     for (; _snow.in_case; _snow_case_end(1))
-#define test it
 
 #define cleanup(...)                                                                                                   \
     do {                                                                                                               \
@@ -1180,8 +1209,8 @@ cleanup:
     } while (0)
 
 #define snow_main_decls                                                                                                \
-    void snow_break() {}                                                                                               \
-    void snow_rerun_failed() {}                                                                                        \
+    void snow_break(void) {}                                                                                               \
+    void snow_rerun_failed(void) {}                                                                                        \
     struct _snow _snow;                                                                                                \
     int _snow_inited = 0
 
@@ -1219,20 +1248,23 @@ cleanup:
             _snow_fail_expl(explanation, "(" #name ") Expected %s to not equal %s (" pattern ")", astr, bstr, a);      \
         return 0;                                                                                                      \
     }
-_snow_define_assertfunc(int, intmax_t, "%ji") _snow_define_assertfunc(uint, uintmax_t, "%ju") _snow_define_assertfunc(
-  dbl,
-  long double,
-  "%Lg"
-) _snow_define_assertfunc(ptr, void*, "%p")
 
-  __attribute__((unused)) static int _snow_assert_str(
-    int invert,
-    const char* explanation,
-    const char* a,
-    const char* astr,
-    const char* b,
-    const char* bstr
-  ) {
+_snow_define_assertfunc(int, intmax_t, "%ji")
+
+  _snow_define_assertfunc(uint, uintmax_t, "%ju")
+
+    _snow_define_assertfunc(dbl, long double, "%Lg")
+
+      _snow_define_assertfunc(ptr, void*, "%p")
+
+        __attribute__((unused)) static int _snow_assert_str(
+          int invert,
+          const char* explanation,
+          const char* a,
+          const char* astr,
+          const char* b,
+          const char* bstr
+        ) {
     int eq = strcmp(a, b) == 0;
     if (!eq && !invert) {
         _snow_fail_expl(explanation, "(str) Expected %s to equal %s, but got \"%s\"", astr, bstr, a);
@@ -1242,7 +1274,8 @@ _snow_define_assertfunc(int, intmax_t, "%ji") _snow_define_assertfunc(uint, uint
     return 0;
 }
 
-__attribute__((unused)) static int _snow_assert_buf(
+__attribute__((unused)) static int
+_snow_assert_buf(
   int invert,
   const char* explanation,
   const void* a,
@@ -1260,46 +1293,11 @@ __attribute__((unused)) static int _snow_assert_buf(
     return 0;
 }
 
-__attribute__((unused)) static int _snow_assert_fake(int invert, ...) {
+__attribute__((unused)) static int
+_snow_assert_fake(int invert, ...) {
     (void)invert;
     return -1;
 }
-
-// In mingw and on ARM, size_t is compatible with unsigned int, and
-// ssize_t is compatible with int
-#if (__SIZEOF_SIZE_T__ == __SIZEOF_INT__)
-#define _snow_generic_assert(x)                                                                                        \
-    _Generic(                                                                                                          \
-      (x),                                                                                                             \
-      float: _snow_assert_dbl,                                                                                         \
-      double: _snow_assert_dbl,                                                                                        \
-      long double: _snow_assert_dbl,                                                                                   \
-      void*: _snow_assert_ptr,                                                                                         \
-      char*: _snow_assert_str,                                                                                         \
-      int: _snow_assert_int,                                                                                           \
-      long long: _snow_assert_int,                                                                                     \
-      unsigned int: _snow_assert_uint,                                                                                 \
-      unsigned long long: _snow_assert_uint,                                                                           \
-      default: _snow_assert_fake                                                                                       \
-    )
-#else
-#define _snow_generic_assert(x)                                                                                        \
-    _Generic(                                                                                                          \
-      (x),                                                                                                             \
-      float: _snow_assert_dbl,                                                                                         \
-      double: _snow_assert_dbl,                                                                                        \
-      long double: _snow_assert_dbl,                                                                                   \
-      void*: _snow_assert_ptr,                                                                                         \
-      char*: _snow_assert_str,                                                                                         \
-      int: _snow_assert_int,                                                                                           \
-      long long: _snow_assert_int,                                                                                     \
-      ssize_t: _snow_assert_int,                                                                                       \
-      unsigned int: _snow_assert_uint,                                                                                 \
-      unsigned long long: _snow_assert_uint,                                                                           \
-      size_t: _snow_assert_uint,                                                                                       \
-      default: _snow_assert_fake                                                                                       \
-    )
-#endif
 
 /*
  * Explicit asserteq macros
@@ -1335,21 +1333,6 @@ __attribute__((unused)) static int _snow_assert_fake(int invert, ...) {
         snow_fail_update();                                                                                            \
         _snow_assert_buf(0, "" expl, (a), #a, (b), #b, size);                                                          \
     } while (0)
-#define asserteq_any(a, b, expl...)                                                                                    \
-    do {                                                                                                               \
-        snow_fail_update();                                                                                            \
-        const char* _snow_explanation = "" expl;                                                                       \
-        _Pragma("GCC diagnostic push") _Pragma("GCC diagnostic ignored \"-Wpragmas\"")                                 \
-          _Pragma("GCC diagnostic ignored \"-Wpointer-arith\"")                                                        \
-            _Pragma("GCC diagnostic ignored \"-Wnull-pointer-arithmetic\"") typeof((a) + 0) _a = a;                    \
-        typeof((b) + 0) _b = b;                                                                                        \
-        _Pragma("GCC diagnostic pop") if (sizeof(_a) != sizeof(_b)) { /* NOLINT */                                     \
-            _snow_fail_expl(_snow_explanation, "Expected %s to equal %s, but their lengths don't match", #a, #b);      \
-        }                                                                                                              \
-        else {                                                                                                         \
-            _snow_assert_buf(0, _snow_explanation, &_a, #a, &_b, #b, sizeof(_a));                                      \
-        }                                                                                                              \
-    } while (0)
 
 /*
  * Explicit assertneq macros
@@ -1378,55 +1361,12 @@ __attribute__((unused)) static int _snow_assert_fake(int invert, ...) {
 #define assertneq_uint(a, b, expl...)                                                                                  \
     do {                                                                                                               \
         snow_fail_update();                                                                                            \
-        _snow_assert_uint(2, "" expl, (a), #a, (b), #b);                                                               \
+        _snow_assert_uint(1, "" expl, (a), #a, (b), #b);                                                               \
     } while (0)
 #define assertneq_buf(a, b, size, expl...)                                                                             \
     do {                                                                                                               \
         snow_fail_update();                                                                                            \
         _snow_assert_buf(1, "" expl, (a), #a, (b), #b, (size));                                                        \
-    } while (0)
-#define assertneq_any(a, b, expl...)                                                                                   \
-    do {                                                                                                               \
-        snow_fail_update();                                                                                            \
-        const char* _snow_explanation = "" expl;                                                                       \
-        _Pragma("GCC diagnostic push") _Pragma("GCC diagnostic ignored \"-Wpragmas\"")                                 \
-          _Pragma("GCC diagnostic ignored \"-Wpointer-arith\"")                                                        \
-            _Pragma("GCC diagnostic ignored \"-Wnull-pointer-arithmetic\"") typeof((a) + 0) _a = a;                    \
-        typeof((b) + 0) _b = b;                                                                                        \
-        _Pragma("GCC diagnostic pop") if (sizeof(_a) != sizeof(_b)) { /* NOLINT */                                     \
-            break;                                                                                                     \
-        }                                                                                                              \
-        else {                                                                                                         \
-            _snow_assert_buf(1, _snow_explanation, &_a, #a, &_b, #b, sizeof(_a));                                      \
-        }                                                                                                              \
-    } while (0)
-
-/*
- * Automatic asserteq
- */
-
-#define asserteq(a, b, expl...)                                                                                        \
-    do {                                                                                                               \
-        snow_fail_update();                                                                                            \
-        const char* _snow_explanation = "" expl;                                                                       \
-        int _snow_ret = _snow_generic_assert(b)(0, _snow_explanation, (a), #a, (b), #b);                               \
-        if (_snow_ret < 0) {                                                                                           \
-            asserteq_any(a, b, expl);                                                                                  \
-        }                                                                                                              \
-    } while (0)
-
-/*
- * Automatic assertneq
- */
-
-#define assertneq(a, b, expl...)                                                                                       \
-    do {                                                                                                               \
-        snow_fail_update();                                                                                            \
-        const char* _snow_explanation = "" expl;                                                                       \
-        int _snow_ret = _snow_generic_assert(b)(1, _snow_explanation, (a), #a, (b), #b);                               \
-        if (_snow_ret < 0) {                                                                                           \
-            assertneq_any(a, b, expl);                                                                                 \
-        }                                                                                                              \
     } while (0)
 
 #endif // SNOW_H

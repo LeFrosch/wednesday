@@ -1,6 +1,6 @@
 CC          := clang
 FORMAT      := clang-format
-CFLAGS 	    := -Wall -Wextra -Werror -std=gnu17 -O2 -Iinclude
+CFLAGS 	    := -Wall -Wextra -Wpedantic -Wconversion -Werror -std=c17 -O2 -Iinclude
 DEBUG_FLAGS := -g -DDEBUG
 
 UNAME := $(shell uname -s)
@@ -16,7 +16,7 @@ endif
 
 DEBUG_FLAGS += $(SANITIZER)
 
-SRCS := $(addprefix src/, page.c)
+SRCS := $(addprefix src/, page.c error.c)
 INCLUDES := $(wildcard include/*.h)
 
 LIB_OBJS := $(SRCS:src/%.c=build/lib/%.o)

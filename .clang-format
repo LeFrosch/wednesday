@@ -8,8 +8,6 @@ PenaltyBreakAssignment: 100000
 Language: Cpp
 
 BreakBeforeBraces: Attach
-AlwaysBreakAfterReturnType: None
-AlwaysBreakAfterDefinitionReturnType: None
 
 AllowAllArgumentsOnNextLine: true
 BinPackArguments: false
