@@ -26,37 +26,17 @@
 #ifndef SNOW_H
 #define SNOW_H
 
+#include <fnmatch.h>
 #include <setjmp.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
-#ifdef __MINGW32__
-#ifndef SNOW_USE_FNMATCH
-#define SNOW_USE_FNMATCH 0
-#endif
-#ifndef SNOW_USE_FORK
-#define SNOW_USE_FORK 0
-#endif
-#else
-#ifndef SNOW_USE_FNMATCH
-#define SNOW_USE_FNMATCH 1
-#endif
-#ifndef SNOW_USE_FORK
-#define SNOW_USE_FORK 1
-#endif
-#endif
-
-#if SNOW_USE_FNMATCH != 0
-#include <fnmatch.h>
-#endif
-
-#if SNOW_USE_FORK != 0
-#include <sys/wait.h>
-#endif
+#include "error.h"
 
 #define SNOW_VERSION "2.3.2"
 
@@ -612,15 +592,9 @@ _snow_desc_begin(const char* name) {
             int matched = 0;
             int error = 0;
 
-            // Use fnmatch to do glob matching if that's enabled,
-            // otherwise just compare with strcmp
-#if SNOW_USE_FNMATCH != 0
             int fm = fnmatch(pattern, desc.full_name, 0);
             matched = fm == 0;
             error = !matched && fm != FNM_NOMATCH;
-#else
-            matched = strcmp(pattern, desc.full_name) == 0;
-#endif
 
             if (matched) {
                 desc.enabled = 1;
@@ -987,11 +961,6 @@ snow_main_function(int argc, char** argv) {
 
     // If --gdb was passed, re-run under GDB
     if (_snow.opts[_SNOW_OPT_GDB].boolval) {
-#if SNOW_USE_FORK == 0
-        fprintf(stderr, "Can't run GDB, because SNOW_USE_FORK is 0.");
-        _snow.exit_code = EXIT_FAILURE;
-        goto cleanup;
-#else
         // Create temporary file
         char tmp_s[] = "/tmp/snow.XXXXXX";
         char tmp[sizeof(tmp_s)];
@@ -1077,7 +1046,6 @@ snow_main_function(int argc, char** argv) {
             _snow.exit_code = WEXITSTATUS(status);
             goto cleanup;
         }
-#endif
     }
 
     /*
@@ -1156,7 +1124,7 @@ cleanup:
 
 #define describe(name)                                                                                                 \
     static void snow_test_##name(void);                                                                                \
-    __attribute__((constructor(__COUNTER__ + 101))) static void _snow_constructor_##name(void) {                           \
+    __attribute__((constructor(__COUNTER__ + 101))) static void _snow_constructor_##name(void) {                       \
         if (!_snow_inited)                                                                                             \
             _snow_init();                                                                                              \
         struct _snow_desc_func df = { #name, &snow_test_##name };                                                      \
@@ -1209,8 +1177,8 @@ cleanup:
     } while (0)
 
 #define snow_main_decls                                                                                                \
-    void snow_break(void) {}                                                                                               \
-    void snow_rerun_failed(void) {}                                                                                        \
+    void snow_break(void) {}                                                                                           \
+    void snow_rerun_failed(void) {}                                                                                    \
     struct _snow _snow;                                                                                                \
     int _snow_inited = 0
 
@@ -1247,24 +1215,26 @@ cleanup:
         else if (eq && invert)                                                                                         \
             _snow_fail_expl(explanation, "(" #name ") Expected %s to not equal %s (" pattern ")", astr, bstr, a);      \
         return 0;                                                                                                      \
-    }
+    }                                                                                                                  \
+    __attribute__((unused)) static int _assertfunc_unused_variable_for_semicolon
 
-_snow_define_assertfunc(int, intmax_t, "%ji")
+_snow_define_assertfunc(int, intmax_t, "%ji");
 
-  _snow_define_assertfunc(uint, uintmax_t, "%ju")
+_snow_define_assertfunc(uint, uintmax_t, "%ju");
 
-    _snow_define_assertfunc(dbl, long double, "%Lg")
+_snow_define_assertfunc(dbl, long double, "%Lg");
 
-      _snow_define_assertfunc(ptr, void*, "%p")
+_snow_define_assertfunc(ptr, void*, "%p");
 
-        __attribute__((unused)) static int _snow_assert_str(
-          int invert,
-          const char* explanation,
-          const char* a,
-          const char* astr,
-          const char* b,
-          const char* bstr
-        ) {
+__attribute__((unused)) static int
+_snow_assert_str(
+  int invert,
+  const char* explanation,
+  const char* a,
+  const char* astr,
+  const char* b,
+  const char* bstr
+) {
     int eq = strcmp(a, b) == 0;
     if (!eq && !invert) {
         _snow_fail_expl(explanation, "(str) Expected %s to equal %s, but got \"%s\"", astr, bstr, a);
@@ -1367,6 +1337,56 @@ _snow_assert_fake(int invert, ...) {
     do {                                                                                                               \
         snow_fail_update();                                                                                            \
         _snow_assert_buf(1, "" expl, (a), #a, (b), #b, (size));                                                        \
+    } while (0)
+
+/*
+ * Error assertion macros
+ */
+
+#define assert_success(expr, expl...)                                                                                  \
+    do {                                                                                                               \
+        if ((expr) != SUCCESS) {                                                                                       \
+            snow_fail_update();                                                                                        \
+                                                                                                                       \
+            if (_snow.rerunning_case) {                                                                                \
+                snow_rerun_failed();                                                                                   \
+            }                                                                                                          \
+                                                                                                                       \
+            char* spaces = _snow_print_case_failure();                                                                 \
+            _snow_print("%s    (result) Expected success of %s, but got %d", spaces, #expr, error_get_code());         \
+                                                                                                                       \
+            if (("" expl)[0] != '\0') {                                                                                \
+                _snow_print(" : %s\n", "" expl);                                                                       \
+            } else {                                                                                                   \
+                _snow_print(".\n");                                                                                    \
+            }                                                                                                          \
+                                                                                                                       \
+            for (uint32_t i = 0, n = error_trace_length(); i < n; ++i) {                                               \
+                const error_frame_t* frame = error_trace_nth(i);                                                       \
+                _snow_print("%s    at %s:%d in %s: %s\n", spaces, frame->file, frame->line, frame->func, frame->msg);  \
+            }                                                                                                          \
+                                                                                                                       \
+            _snow_print("%s    in %s:%i(%s)\n", spaces, _snow.filename, _snow.linenum, _snow.current_desc->full_name); \
+            _snow_case_end(0);                                                                                         \
+        }                                                                                                              \
+    } while (0)
+
+#define assert_failure(expr, code, expl...)                                                                            \
+    do {                                                                                                               \
+        snow_fail_update();                                                                                            \
+                                                                                                                       \
+        if ((expr) != FAILURE) {                                                                                       \
+            _snow_fail_expl("" expl, "(result) Expected failure of %s", #expr);                                        \
+        }                                                                                                              \
+        if (error_get_code() != code) {                                                                                \
+            _snow_fail_expl(                                                                                           \
+              "" expl,                                                                                                 \
+              "(result) Expected error code of %s to be equal to %d, but got %d",                                      \
+              #expr,                                                                                                   \
+              code,                                                                                                    \
+              error_get_code()                                                                                         \
+            );                                                                                                         \
+        }                                                                                                              \
     } while (0)
 
 #endif // SNOW_H

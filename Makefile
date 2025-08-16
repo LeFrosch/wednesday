@@ -16,7 +16,7 @@ endif
 
 DEBUG_FLAGS += $(SANITIZER)
 
-SRCS := $(addprefix src/, page.c error.c)
+SRCS := $(addprefix src/, pager.c error.c)
 INCLUDES := $(wildcard include/*.h)
 
 LIB_OBJS := $(SRCS:src/%.c=build/lib/%.o)
