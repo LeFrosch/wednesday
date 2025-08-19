@@ -1193,10 +1193,10 @@ cleanup:
  * Assert
  */
 
-#define assertis(x, expl...)                                                                                           \
+#define assertis(x, ...)                                                                                               \
     do {                                                                                                               \
         snow_fail_update();                                                                                            \
-        const char* _snow_explanation = "" expl;                                                                       \
+        const char* _snow_explanation = "" __VA_ARGS__;                                                                \
         if (!(x))                                                                                                      \
             _snow_fail_expl(_snow_explanation, "Assertion failed: %s", #x);                                            \
     } while (0)
@@ -1273,77 +1273,77 @@ _snow_assert_fake(int invert, ...) {
  * Explicit asserteq macros
  */
 
-#define asserteq_dbl(a, b, expl...)                                                                                    \
+#define asserteq_dbl(a, b, ...)                                                                                        \
     do {                                                                                                               \
         snow_fail_update();                                                                                            \
-        _snow_assert_dbl(0, "" expl, (a), #a, (b), #b);                                                                \
+        _snow_assert_dbl(0, "" __VA_ARGS__, (a), #a, (b), #b);                                                         \
     } while (0)
-#define asserteq_ptr(a, b, expl...)                                                                                    \
+#define asserteq_ptr(a, b, ...)                                                                                        \
     do {                                                                                                               \
         snow_fail_update();                                                                                            \
-        _snow_assert_ptr(0, "" expl, (a), #a, (b), #b);                                                                \
+        _snow_assert_ptr(0, "" __VA_ARGS__, (a), #a, (b), #b);                                                         \
     } while (0)
-#define asserteq_str(a, b, expl...)                                                                                    \
+#define asserteq_str(a, b, ...)                                                                                        \
     do {                                                                                                               \
         snow_fail_update();                                                                                            \
-        _snow_assert_str(0, "" expl, (a), #a, (b), #b);                                                                \
+        _snow_assert_str(0, "" __VA_ARGS__, (a), #a, (b), #b);                                                         \
     } while (0)
-#define asserteq_int(a, b, expl...)                                                                                    \
+#define asserteq_int(a, b, ...)                                                                                        \
     do {                                                                                                               \
         snow_fail_update();                                                                                            \
-        _snow_assert_int(0, "" expl, (a), #a, (b), #b);                                                                \
+        _snow_assert_int(0, "" __VA_ARGS__, (a), #a, (b), #b);                                                         \
     } while (0)
-#define asserteq_uint(a, b, expl...)                                                                                   \
+#define asserteq_uint(a, b, ...)                                                                                       \
     do {                                                                                                               \
         snow_fail_update();                                                                                            \
-        _snow_assert_uint(0, "" expl, (a), #a, (b), #b);                                                               \
+        _snow_assert_uint(0, "" __VA_ARGS__, (a), #a, (b), #b);                                                        \
     } while (0)
-#define asserteq_buf(a, b, size, expl...)                                                                              \
+#define asserteq_buf(a, b, size, ...)                                                                                  \
     do {                                                                                                               \
         snow_fail_update();                                                                                            \
-        _snow_assert_buf(0, "" expl, (a), #a, (b), #b, size);                                                          \
+        _snow_assert_buf(0, "" __VA_ARGS__, (a), #a, (b), #b, size);                                                   \
     } while (0)
 
 /*
  * Explicit assertneq macros
  */
 
-#define assertneq_dbl(a, b, expl...)                                                                                   \
+#define assertneq_dbl(a, b, ...)                                                                                       \
     do {                                                                                                               \
         snow_fail_update();                                                                                            \
-        _snow_assert_dbl(1, "" expl, (a), #a, (b), #b);                                                                \
+        _snow_assert_dbl(1, "" __VA_ARGS__, (a), #a, (b), #b);                                                         \
     } while (0)
-#define assertneq_ptr(a, b, expl...)                                                                                   \
+#define assertneq_ptr(a, b, ...)                                                                                       \
     do {                                                                                                               \
         snow_fail_update();                                                                                            \
-        _snow_assert_ptr(1, "" expl, (a), #a, (b), #b);                                                                \
+        _snow_assert_ptr(1, "" __VA_ARGS__, (a), #a, (b), #b);                                                         \
     } while (0)
-#define assertneq_str(a, b, expl...)                                                                                   \
+#define assertneq_str(a, b, ...)                                                                                       \
     do {                                                                                                               \
         snow_fail_update();                                                                                            \
-        _snow_assert_str(1, "" expl, (a), #a, (b), #b);                                                                \
+        _snow_assert_str(1, "" __VA_ARGS__, (a), #a, (b), #b);                                                         \
     } while (0)
-#define assertneq_int(a, b, expl...)                                                                                   \
+#define assertneq_int(a, b, ...)                                                                                       \
     do {                                                                                                               \
         snow_fail_update();                                                                                            \
-        _snow_assert_int(1, "" expl, (a), #a, (b), #b);                                                                \
+        _snow_assert_int(1, "" __VA_ARGS__, (a), #a, (b), #b);                                                         \
     } while (0)
-#define assertneq_uint(a, b, expl...)                                                                                  \
+#define assertneq_uint(a, b, ...)                                                                                      \
     do {                                                                                                               \
         snow_fail_update();                                                                                            \
-        _snow_assert_uint(1, "" expl, (a), #a, (b), #b);                                                               \
+        _snow_assert_uint(1, "" __VA_ARGS__, (a), #a, (b), #b);                                                        \
     } while (0)
-#define assertneq_buf(a, b, size, expl...)                                                                             \
+#define assertneq_buf(a, b, size, ...)                                                                                 \
     do {                                                                                                               \
         snow_fail_update();                                                                                            \
-        _snow_assert_buf(1, "" expl, (a), #a, (b), #b, (size));                                                        \
+        _snow_assert_buf(1, "" __VA_ARGS__, (a), #a, (b), #b, (size));                                                 \
     } while (0)
 
 /*
  * Error assertion macros
  */
 
-#define assert_success(expr, expl...)                                                                                  \
+#define assert_success(expr, ...)                                                                                      \
     do {                                                                                                               \
         if ((expr) != SUCCESS) {                                                                                       \
             snow_fail_update();                                                                                        \
@@ -1355,11 +1355,8 @@ _snow_assert_fake(int invert, ...) {
             char* spaces = _snow_print_case_failure();                                                                 \
             _snow_print("%s    (result) Expected success of %s, but got %d", spaces, #expr, error_get_code());         \
                                                                                                                        \
-            if (("" expl)[0] != '\0') {                                                                                \
-                _snow_print(" : %s\n", "" expl);                                                                       \
-            } else {                                                                                                   \
-                _snow_print(".\n");                                                                                    \
-            }                                                                                                          \
+            __VA_OPT__(_snow_print(" : %s", "" __VA_ARGS__);)                                                          \
+            _snow_print(".\n");                                                                                        \
                                                                                                                        \
             for (uint32_t i = 0, n = error_trace_length(); i < n; ++i) {                                               \
                 const error_frame_t* frame = error_trace_nth(i);                                                       \
@@ -1371,16 +1368,16 @@ _snow_assert_fake(int invert, ...) {
         }                                                                                                              \
     } while (0)
 
-#define assert_failure(expr, code, expl...)                                                                            \
+#define assert_failure(expr, code, ...)                                                                                \
     do {                                                                                                               \
         snow_fail_update();                                                                                            \
                                                                                                                        \
         if ((expr) != FAILURE) {                                                                                       \
-            _snow_fail_expl("" expl, "(result) Expected failure of %s", #expr);                                        \
+            _snow_fail_expl("" __VA_ARGS__, "(result) Expected failure of %s", #expr);                                 \
         }                                                                                                              \
         if (error_get_code() != code) {                                                                                \
             _snow_fail_expl(                                                                                           \
-              "" expl,                                                                                                 \
+              "" __VA_ARGS__,                                                                                          \
               "(result) Expected error code of %s to be equal to %d, but got %d",                                      \
               #expr,                                                                                                   \
               code,                                                                                                    \

@@ -25,20 +25,13 @@ typedef struct {
         .arg = (void*)&args, .err = true, .line = __LINE__, .file = __FILE__, .func = __FUNCTION__                     \
     }
 
-#define enable_defer(fun, type, code)                                                                                  \
-    __attribute__((unused)) static inline void defer_##fun(const defer_t* def) {                                       \
-        if (!defer_should_run(def)) {                                                                                  \
-            return;                                                                                                    \
-        }                                                                                                              \
-                                                                                                                       \
-        const uint32_t ret = fun(type(def->arg));                                                                      \
-        if (ret != code) {                                                                                             \
-            error_report(def->file, def->func, def->line, "defer fialed, expected: %d, got: %d", code, ret);           \
-        }                                                                                                              \
-    }                                                                                                                  \
-    __attribute__((unused)) static int _defer_unused_variable_for_semicolon
+#define defer_impl(name) __attribute__((unused)) static inline void defer_##name(const defer_t* __defer)
 
-__attribute__((unused)) static inline bool
-defer_should_run(const defer_t* def) {
-    return !def->err || error_get_code() != 0;
+#define defer_arg(type) ((type*)__defer->arg)
+
+#define defer_guard() if (__defer->err && error_get_code() == 0) return
+
+defer_impl(free) {
+    defer_guard();
+    free(*defer_arg(void*));
 }

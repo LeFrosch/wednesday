@@ -1,0 +1,63 @@
+#include "latch.h"
+
+#include <assert.h>
+#include <stdatomic.h>
+
+void
+latch_acquire_read(latch_t* latch) {
+    int32_t value = 0; // optimistic initialization, compare exchange will load anyway
+
+    while (1) {
+        if (value >= 0) {
+            const bool success = atomic_compare_exchange_weak_explicit(
+              latch, &value, value + 1, memory_order_acquire, memory_order_relaxed
+            );
+
+            if (success) {
+                break;
+            }
+        } else {
+            value = atomic_load_explicit(latch, memory_order_relaxed);
+        }
+    }
+}
+
+void
+latch_acquire_write(latch_t* latch) {
+    int32_t value = 0; // optimistic initialization, compare exchange will load anyway
+
+    while (1) {
+        if (value == 0) {
+            const bool success = atomic_compare_exchange_weak_explicit(
+              latch, &value, -1, memory_order_acquire, memory_order_relaxed
+            );
+
+            if (success) {
+                break;
+            }
+        } else {
+            value = atomic_load_explicit(latch, memory_order_relaxed);
+        }
+    }
+}
+
+void
+latch_acquire(latch_t* latch, bool exclusive) {
+    if (exclusive) {
+        latch_acquire_write(latch);
+    } else {
+        latch_acquire_read(latch);
+    }
+}
+
+void
+latch_release_read(latch_t* latch) {
+    assert(*latch > 0);
+    atomic_fetch_sub_explicit(latch, 1, memory_order_release);
+}
+
+void
+latch_release_write(latch_t* latch) {
+    assert(*latch == -1);
+    atomic_store_explicit(latch, 0, memory_order_release);
+}
