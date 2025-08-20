@@ -1,3 +1,3 @@
-#include "snow.h"
+#include "winter.h"
 
-snow_main();
+winter_main();
