@@ -30,19 +30,20 @@
 
 #pragma once
 
-#include <assert.h>
+#include <fcntl.h>
 #include <pthread.h>
+#include <signal.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/errno.h>
 #include <sys/time.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "error.h"
-
-#include <signal.h>
 
 #define WINTER_VERSION "0.0.1"
 
@@ -56,7 +57,7 @@
 #define WINTER_COLOR_SUCCESS "\033[32m"
 #define WINTER_COLOR_FAIL "\033[31m"
 #define WINTER_COLOR_MAYBE "\033[35m"
-#define WINTER_COLOR_DESC WINTER_COLOR_BOLD "\033[33m"
+#define WINTER_COLOR_DESC "\033[33m"
 
 #define WINTER_FUNC __attribute__((unused)) static
 
@@ -65,6 +66,15 @@
 #define WINTER_FUNC_AFTER_EACH 2
 
 #define WINTER_EXIT_FAILURE 255
+
+enum {
+    _WINTER_OPT_VERSION,
+    _WINTER_OPT_HELP,
+    _WINTER_OPT_LIST,
+    _WINTER_OPT_COLOR,
+    _WINTER_OPT_DEBUG,
+    _WINTER_OPT_LAST,
+};
 
 typedef struct {
     size_t element_size;
@@ -94,6 +104,12 @@ typedef struct {
         pthread_mutex_t mutex;
         FILE* file;
     } print;
+
+    struct {
+        bool list;
+        bool color;
+        bool debug;
+    } opts;
 } winter_t;
 
 /// Global state, shared between threads and resources.
@@ -121,10 +137,29 @@ typedef struct {
     uint16_t thread_id;
 } winter_args_t;
 
-WINTER_FUNC void
-_winter_fatal_error(const char* msg) {
-    fprintf(stderr, "fatal error: %s\n", msg);
-    exit(-1);
+typedef struct {
+    const char* name;
+    char short_name;
+    bool is_flag;
+    bool overwritten;
+    union {
+        bool bool_val;
+        const char* str_val;
+    };
+} _winter_opt_t;
+
+WINTER_FUNC __attribute__((__format__(__printf__, 1, 2))) void
+_winter_fatal_error(const char* fmt, ...) {
+    fprintf(stderr, "Fatal error: ");
+
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+
+    fprintf(stderr, ".\n");
+
+    exit(EXIT_FAILURE);
 }
 
 WINTER_FUNC void
@@ -135,7 +170,7 @@ _winter_array_init(winter_array_t* arr, const size_t size) {
 
     arr->elements = malloc(arr->allocated * arr->element_size);
     if (arr->elements == nullptr) {
-        _winter_fatal_error("initial array allocation failed");
+        _winter_fatal_error("Initial array allocation failed");
     }
 }
 
@@ -150,7 +185,7 @@ _winter_array_push(winter_array_t* arr, const void* element) {
         arr->allocated *= 2;
         arr->elements = realloc(arr->elements, arr->allocated * arr->element_size);
         if (arr->elements == nullptr) {
-            _winter_fatal_error("array reallocation failed");
+            _winter_fatal_error("Array reallocation failed (size: %ji)", arr->allocated);
         }
     }
 
@@ -203,6 +238,15 @@ _winter_print_unit_begin(const winter_unit_t* unit) {
     _winter_print(
       "" WINTER_COLOR_BOLD WINTER_COLOR_MAYBE "? " WINTER_COLOR_RESET WINTER_COLOR_MAYBE
       "Testing: " WINTER_COLOR_RESET WINTER_COLOR_DESC "%s" WINTER_COLOR_RESET "\n",
+      unit->test->name
+    );
+}
+
+WINTER_FUNC void
+_winter_print_unit_debug(const winter_unit_t* unit) {
+    _winter_print(
+      "" WINTER_COLOR_BOLD WINTER_COLOR_FAIL "> " WINTER_COLOR_RESET WINTER_COLOR_FAIL
+      "Debug:   " WINTER_COLOR_RESET WINTER_COLOR_DESC "%s" WINTER_COLOR_RESET "\n",
       unit->test->name
     );
 }
@@ -287,6 +331,54 @@ _winter_process_entry(winter_unit_t* unit) {
     unit->suite->func(WINTER_FUNC_AFTER_EACH, nullptr);
 }
 
+static volatile sig_atomic_t _winter_debug_abort = false;
+
+WINTER_FUNC void
+_winter_debug_handler(const int sig) {
+    (void)sig;
+    _winter_debug_abort = true;
+}
+
+WINTER_FUNC bool
+_winter_debug(winter_unit_t* unit) {
+    const pid_t pid = fork();
+    if (pid == 0) {
+        raise(SIGSTOP);
+        _winter_process_entry(unit);
+        _exit(0);
+    }
+
+    signal(SIGINT, _winter_debug_handler);
+    _winter_debug_abort = false;
+
+    _winter_print(WINTER_INDENT "Waiting for debugger to attach, press ctrl-c to abort... (pid %d)\n", pid);
+
+    while (true) {
+        const pid_t ret = waitpid(pid, nullptr, WNOHANG);
+
+        if (ret == pid) {
+            _winter_print(WINTER_INDENT "Test process exited. Restarting test.\n");
+            break;
+        }
+
+        if (_winter_debug_abort) {
+            _winter_print("\r" WINTER_INDENT "Debugger aborted. Continuing to next test.\n");
+            break;
+        }
+
+        if (ret == -1 && errno != EINTR && errno != ECHILD) {
+            _winter_print(WINTER_INDENT "Waiting for debug process failed (%s).\n", strerror(errno));
+            break;
+        }
+
+        usleep(WINTER_PROCESS_POLL_MS * 1000);
+    }
+
+    signal(SIGINT, SIG_DFL);
+
+    return _winter_debug_abort;
+}
+
 WINTER_FUNC bool
 _winter_execute(winter_unit_t* unit) {
     const pid_t pid = fork();
@@ -296,7 +388,7 @@ _winter_execute(winter_unit_t* unit) {
     }
 
     int status = 0;
-    while (1) {
+    while (true) {
         const pid_t ret = waitpid(pid, &status, WNOHANG);
 
         // child process exited
@@ -342,9 +434,131 @@ _winter_execute(winter_unit_t* unit) {
     return true;
 }
 
+WINTER_FUNC void
+_winter_list(void) {
+    _winter_print(WINTER_COLOR_BOLD "\nTest suites:\n" WINTER_COLOR_RESET);
+
+    size_t total_tests = 0;
+    for (size_t i = 0; i < _winter.suites.length; ++i) {
+        const winter_suite_t* suite = _winter_array_get(&_winter.suites, i);
+        _winter_print(WINTER_COLOR_DESC "%s:" WINTER_COLOR_RESET " %ji tests\n", suite->name, suite->tests.length);
+        total_tests += suite->tests.length;
+    }
+
+    _winter_print(WINTER_COLOR_BOLD "\nTotal: %ji tests.\n" WINTER_COLOR_RESET, total_tests);
+}
+
+#define _winter_print_usage(path, u, d) fprintf(stdout, "  %s %-21s %s\n", path, u, d);
+
+#define _winter_print_flag(n, sn, expl, d)                                                                             \
+    fprintf(stdout, "  %-20s%s\n", "--[no-]" n " | -" sn, expl);                                                       \
+    fprintf(stdout, "  %-20sDefault: %s.\n", "", d)
+
+WINTER_FUNC void
+_winter_print_help(const char* path) {
+    fprintf(stdout, "Usages:\n");
+    _winter_print_usage(path, "[options] [patterns]", "Run all tests that match the patterns.");
+    _winter_print_usage(path, "--help | -h", "Print this help text and exit.");
+    _winter_print_usage(path, "--version | -v", "Print version and exit.");
+    _winter_print_usage(path, "--list | -l", "Print a list of all available tests.");
+
+    fprintf(stdout, "\nOptions:\n");
+    _winter_print_flag("color", "c", "Whether to print output in color.", "on when output is TTY");
+    _winter_print_flag("debug", "d", "Rerun failed test and wait for a debugger to attach to the test.", "off");
+}
+
+#define _winter_opt_flag(opt, n, sn)                                                                                   \
+    opt.name = n;                                                                                                      \
+    opt.short_name = sn;                                                                                               \
+    opt.is_flag = true;                                                                                                \
+    opt.bool_val = false;                                                                                              \
+    opt.overwritten = false
+
+#define _winter_opt_default(opt, val)                                                                                  \
+    if (!opt.overwritten)                                                                                              \
+    opt.bool_val = val
+
+WINTER_FUNC void
+_winter_parse_args(const int argc, const char** argv) {
+    _winter_opt_t opts[_WINTER_OPT_LAST];
+
+    _winter_opt_flag(opts[_WINTER_OPT_VERSION], "version", 'v');
+    _winter_opt_flag(opts[_WINTER_OPT_HELP], "help", 'h');
+    _winter_opt_flag(opts[_WINTER_OPT_LIST], "list", 'l');
+    _winter_opt_flag(opts[_WINTER_OPT_COLOR], "color", 'c');
+    _winter_opt_flag(opts[_WINTER_OPT_DEBUG], "debug", 'd');
+
+    for (int i = 1; i < argc; ++i) {
+        const char* arg = argv[i];
+
+        // TODO: support test selection by patterns
+
+        const bool is_long = arg[1] == '-';
+        const char* name = is_long ? arg + 2 : arg + 1;
+        const bool inverted = is_long && strncmp(name, "no-", 3) == 0;
+
+        if (inverted) {
+            name += 3;
+        }
+
+        bool valid = false;
+        for (uint32_t j = 0; j < _WINTER_OPT_LAST; ++j) {
+            _winter_opt_t* opt = &opts[j];
+
+            if (is_long) {
+                valid = strcmp(opt->name, name) == 0;
+            } else {
+                valid = opt->short_name == name[0];
+            }
+            if (!valid) {
+                continue;
+            }
+
+            opt->overwritten = true;
+
+            if (opt->is_flag) {
+                opt->bool_val = !inverted;
+            } else {
+                // TODO: support string args, for logs?
+            }
+
+            break;
+        }
+
+        if (!valid) {
+            _winter_fatal_error("Unknown option: %s", arg);
+        }
+    }
+
+    if (opts[_WINTER_OPT_HELP].bool_val) {
+        _winter_print_help(argv[0]);
+        _exit(EXIT_SUCCESS);
+    }
+    if (opts[_WINTER_OPT_VERSION].bool_val) {
+        fprintf(stdout, "Winter %s\n", WINTER_VERSION);
+        _exit(EXIT_SUCCESS);
+    }
+    if (opts[_WINTER_OPT_LIST].bool_val) {
+        _winter_list();
+        _exit(EXIT_SUCCESS);
+    }
+
+    const bool is_tty = isatty(fileno(_winter.print.file));
+    const bool no_color = getenv("NO_COLOR") != nullptr;
+    _winter_opt_default(opts[_WINTER_OPT_COLOR], is_tty && !no_color);
+
+    _winter.opts.list = opts[_WINTER_OPT_LIST].bool_val;
+    _winter.opts.color = opts[_WINTER_OPT_COLOR].bool_val;
+    _winter.opts.debug = opts[_WINTER_OPT_DEBUG].bool_val;
+}
+
 WINTER_FUNC int
-_winter_main(void) {
+_winter_main(const int argc, const char** argv) {
     _winter_initialize();
+    _winter_parse_args(argc, argv);
+
+    // mark stdin as non blocking, required for debug retry loop
+    fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL, 0) | O_NONBLOCK);
 
     const double start_time = _winter_now();
     uint32_t global_test_count = 0;
@@ -364,6 +578,15 @@ _winter_main(void) {
 
             _winter_print_unit_begin(&unit);
             const bool success = _winter_execute(&unit);
+
+            while (!success && _winter.opts.debug) {
+                _winter_print_unit_debug(&unit);
+
+                if (_winter_debug(&unit)) {
+                    break;
+                }
+            }
+
             _winter_print_unit_end(&unit, success);
 
             suite_success_count += success ? 1 : 0;
@@ -377,15 +600,19 @@ _winter_main(void) {
 
     _winter_print_summary(start_time, global_success_count, global_test_count);
 
-    return 0;
+    if (global_test_count == global_success_count) {
+        return EXIT_SUCCESS;
+    } else {
+        return EXIT_FAILURE;
+    }
 }
 
 #define winter_main()                                                                                                  \
     winter_t _winter;                                                                                                  \
     _Thread_local winter_local_t _winter_local;                                                                        \
                                                                                                                        \
-    int main(void) {                                                                                                   \
-        return _winter_main();                                                                                         \
+    int main(const int argc, const char** argv) {                                                                      \
+        return _winter_main(argc, argv);                                                                               \
     }                                                                                                                  \
                                                                                                                        \
     __attribute__((unused)) static int _winter_main_unused_variable_for_semicolon
@@ -588,7 +815,8 @@ _winter_assert_str(
 
 #define it(name) _winter_test(name, __COUNTER__, 1, WINTER_DEFAULT_TIMEOUT_MS)
 
-#define parallel(name, threads) _winter_test(name " (parallel)", __COUNTER__, threads, WINTER_DEFAULT_TIMEOUT_MS)
+#define parallel(name, threads)                                                                                        \
+    _winter_test(name " (parallel " #threads ")", __COUNTER__, threads, WINTER_DEFAULT_TIMEOUT_MS)
 
 #define before_each() if (index == WINTER_FUNC_BEFORE_EACH)
 
