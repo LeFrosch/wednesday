@@ -29,7 +29,9 @@ typedef struct {
 
 #define defer_arg(type) ((type*)__defer->arg)
 
-#define defer_guard() if (__defer->err && error_get_code() == 0) return
+#define defer_guard()                                                                                                  \
+    if (__defer->err && error_get_code() == 0)                                                                         \
+    return
 
 defer_impl(free) {
     defer_guard();

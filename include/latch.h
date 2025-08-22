@@ -23,6 +23,9 @@ latch_release_read(latch_t* latch);
 void
 latch_release_write(latch_t* latch);
 
+bool
+latch_available(const latch_t* latch);
+
 defer_impl(latch_release_read) {
     defer_guard();
     latch_release_read(defer_arg(latch_t));

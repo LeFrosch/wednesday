@@ -37,7 +37,7 @@ error_append_message(const char* format, ...) {
     assert(error_count > 0);
 
     error_frame_t* frame = error_trace_nth(error_count - 1);
-    if (frame == NULL) {
+    if (frame == nullptr) {
         return;
     }
 
@@ -65,7 +65,7 @@ error_trace_length(void) {
 error_frame_t*
 error_trace_nth(const uint32_t n) {
     if (n >= error_count || error_count >= MAX_ERRORS) {
-        return NULL;
+        return nullptr;
     }
 
     return error_list + n;

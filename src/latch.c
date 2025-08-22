@@ -1,7 +1,8 @@
-#include "latch.h"
-
 #include <assert.h>
 #include <stdatomic.h>
+
+#include "latch.h"
+#include "winter.h"
 
 void
 latch_acquire_read(latch_t* latch) {
@@ -60,4 +61,9 @@ void
 latch_release_write(latch_t* latch) {
     assert(*latch == -1);
     atomic_store_explicit(latch, 0, memory_order_release);
+}
+
+bool
+latch_available(const latch_t* latch) {
+    return atomic_load_explicit(latch, memory_order_acquire) == 0;
 }
