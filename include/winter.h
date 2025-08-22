@@ -41,6 +41,7 @@
 #include <sys/errno.h>
 #include <sys/time.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "error.h"
@@ -218,6 +219,18 @@ _winter_now(void) {
 }
 
 WINTER_FUNC void
+_winter_sleep_ms(uint32_t ms) {
+    struct timespec ts = {
+       .tv_sec = (time_t)(ms / 1000),
+        .tv_nsec = (long)(ms % 1000) * 1000000,
+    };
+
+    while (nanosleep(&ts, &ts) == -1 && errno == EINTR) {
+        // retry with remaining time
+    }
+}
+
+WINTER_FUNC void
 _winter_print_timer(const double start_time) {
     double msec = _winter_now() - start_time;
     if (msec < 0) {
@@ -371,7 +384,7 @@ _winter_debug(winter_unit_t* unit) {
             break;
         }
 
-        usleep(WINTER_PROCESS_POLL_MS * 1000);
+        _winter_sleep_ms(WINTER_PROCESS_POLL_MS);
     }
 
     signal(SIGINT, SIG_DFL);
@@ -404,7 +417,7 @@ _winter_execute(winter_unit_t* unit) {
                 return false;
             }
 
-            usleep(WINTER_PROCESS_POLL_MS * 1000);
+            _winter_sleep_ms(WINTER_PROCESS_POLL_MS);
         }
 
         if (ret == -1 && errno != EINTR) {
@@ -607,6 +620,8 @@ _winter_main(const int argc, const char** argv) {
     }
 }
 
+#ifdef WINTER_ENABLED
+
 #define winter_main()                                                                                                  \
     winter_t _winter;                                                                                                  \
     _Thread_local winter_local_t _winter_local;                                                                        \
@@ -616,6 +631,12 @@ _winter_main(const int argc, const char** argv) {
     }                                                                                                                  \
                                                                                                                        \
     __attribute__((unused)) static int _winter_main_unused_variable_for_semicolon
+
+#else
+
+#define winter_main() __attribute__((unused)) static int _winter_main_unused_variable_for_semicolon
+
+#endif
 
 // ### ASSERTIONS #####################################################################################################
 
@@ -788,6 +809,8 @@ _winter_assert_str(
 
 // ### TEST CREATION ###################################################################################################
 
+#ifdef WINTER_ENABLED
+
 #define describe(name)                                                                                                 \
     static void winter_test_##name(uint64_t, winter_array_t*);                                                         \
                                                                                                                        \
@@ -803,7 +826,18 @@ _winter_assert_str(
         _winter_array_push(&_winter.suites, &suite);                                                                   \
     }                                                                                                                  \
                                                                                                                        \
-    __attribute__((optnone)) static void winter_test_##name(const uint64_t index, winter_array_t* out)
+    __attribute__((optnone)) static void winter_test_##name(                                                           \
+      const uint64_t index __attribute__((unused)), winter_array_t* out __attribute__((unused))                        \
+    )
+
+#else
+
+#define describe(name)                                                                                                 \
+    WINTER_FUNC void _winter_unused_##name(                                                                            \
+      const uint64_t index __attribute__((unused)), winter_array_t* out __attribute__((unused))                        \
+    )
+
+#endif
 
 #define _winter_test(name, i, threads, timeout)                                                                        \
     if (index == WINTER_FUNC_INFO) {                                                                                   \

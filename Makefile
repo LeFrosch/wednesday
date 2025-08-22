@@ -1,6 +1,6 @@
 CC          := clang
 FORMAT      := clang-format
-CFLAGS 	    := -Wall -Wextra -Wpedantic -Wconversion -Werror -std=c23 -O2 -Iinclude
+CFLAGS 	    := -Wall -Wextra -Wpedantic -Wconversion -Werror -std=c23 -O2 -Iinclude -D_POSIX_C_SOURCE=200809L
 DEBUG_FLAGS := -g -DDEBUG -O0
 
 UNAME := $(shell uname -s)
@@ -28,7 +28,7 @@ $(LIB_OBJS): build/lib/%.o: src/%.c $(INCLUDES)
 
 $(TEST_OBJS): build/test/%.o: src/%.c $(INCLUDES) 
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(DEBUG_FLAGS) -DSNOW_ENABLED -c -o $@ $<
+	$(CC) $(CFLAGS) $(DEBUG_FLAGS) -DWINTER_ENABLED -c -o $@ $<
 
 lib.so: $(LIB_OBJS)
 	$(CC) -shared $^ -o $@
