@@ -30,7 +30,7 @@
 
 #pragma once
 
-#include <fcntl.h>
+#include <fnmatch.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -221,7 +221,7 @@ _winter_now(void) {
 WINTER_FUNC void
 _winter_sleep_ms(uint32_t ms) {
     struct timespec ts = {
-       .tv_sec = (time_t)(ms / 1000),
+        .tv_sec = (time_t)(ms / 1000),
         .tv_nsec = (long)(ms % 1000) * 1000000,
     };
 
@@ -570,9 +570,6 @@ _winter_main(const int argc, const char** argv) {
     _winter_initialize();
     _winter_parse_args(argc, argv);
 
-    // mark stdin as non blocking, required for debug retry loop
-    fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL, 0) | O_NONBLOCK);
-
     const double start_time = _winter_now();
     uint32_t global_test_count = 0;
     uint32_t global_success_count = 0;
@@ -782,7 +779,7 @@ _winter_assert_str(
         for (uint32_t _i = 0, _n = error_trace_length(); _i < _n; ++_i) {                                              \
             const error_frame_t* _frame = error_trace_nth(_i);                                                         \
             _winter_print(                                                                                             \
-              WINTER_INDENT "at %s:%d in %s: %s.\n", _frame->file, _frame->line, _frame->func, _frame->msg             \
+              WINTER_INDENT "at %s:%d in %s: %s\n", _frame->file, _frame->line, _frame->func, _frame->msg              \
             );                                                                                                         \
         }                                                                                                              \
                                                                                                                        \
