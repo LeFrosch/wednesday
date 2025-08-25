@@ -9,60 +9,99 @@
 #include "winter.h"
 
 enum {
+    /// If the page content was modified.
     PAGE_FLAG_DIRTY = (1u << 0),
+
+    /// Second chance bit. Set if the page is fixed and provides a second chance
+    /// for the page on eviction.
     PAGE_FLAG_REF = (1u << 1),
+
+    /// Set if the page was fixed exclusively (i.e. with write lock).
     PAGE_FLAG_EXCLUSIVE = (1u << 2),
 };
 
+/// Page header stored before of the actual page data in memory and is not
+/// persisted to disk.
 typedef struct {
     page_id_t id;
+
+    /// Read-write lock of the page only protects the page's content.
     latch_t latch;
 
-    uint32_t ring_index;
-
+    /// Tracks boolean flags for the page. Can be accessed concurrently with
+    /// any latch.
     _Atomic uint8_t flags;
 } header_t;
 
+/// Mapping from a page id to a header pointer, stored in the hash map. The
+/// page id is replicated to improve performance.
 typedef struct {
     page_id_t page_id;
     header_t* header;
 } page_t;
 
+/// Linked list to track hash map overflows.
 typedef struct bucket {
     page_t value;
     struct bucket* next;
 } bucket_t;
 
+/// Entry in the hash map directory. Provides two slots for immediate overflow
+/// to improve performance.
 typedef struct {
+    /// Protects the hash map entry.
     latch_t latch;
+
+    /// First slot for this hash map entry.
     page_t first;
+
+    /// Second slot for this hash map entry.
     page_t second;
+
+    /// Linked a list of further slots to track overflow.
     bucket_t* overflow;
 } hash_entry_t;
 
+/// Entry in the CLOCK ring. Mapping from a page id to a header pointer. Not
+/// directly protected by any latch, but the header should only be modified
+/// if the latch of the hash map entry for the page id was acquired.
 typedef struct {
     _Atomic page_id_t page_id;
     header_t* header;
 } ring_entry_t;
 
 struct pager_t {
+    /// Size of a single page in bytes.
     uint16_t page_size;
+
+    /// The maximum number of pages tracked by the pager.
     uint32_t size;
+
+    /// Mask used by the hash function.
     uint32_t mask;
+
+    /// The number of pages currently tracked by the pager. Can be modified
+    /// concurrently and might be an over approximation if the pager is
+    /// accessed concurrently.
+    _Atomic uint32_t page_count;
+
+    /// Pointer into the ring, used for page eviction.
+    _Atomic uint32_t evict_head;
+
+    /// Pointer into the ring, used for page creation.
+    _Atomic uint32_t create_head;
 
     hash_entry_t* directory;
     ring_entry_t* ring;
-
-    _Atomic uint32_t page_count;
-    _Atomic uint32_t evict_head;
-    _Atomic uint32_t create_head;
 };
 
+/// Converts a page header pointer to a pointer to the page data.
 static unsigned char*
 header_get_data(const header_t* page) {
     return (unsigned char*)(page + 1);
 }
 
+/// Converts a page data pointer to a pointer to the page header.
 static header_t*
 header_from_data(const unsigned char* data) {
     return (header_t*)data - 1;
@@ -92,6 +131,8 @@ pager_open(pager_t* pager, const uint16_t page_size, const uint32_t directory_si
     return SUCCESS;
 }
 
+/// Simple hash function that maps the page id to hash map entries. (copied
+/// from Stackoverflow but forgot the source)
 static uint32_t
 pager_hash(const pager_t* pager, const page_id_t id) {
     uint32_t hash = id;
@@ -102,6 +143,8 @@ pager_hash(const pager_t* pager, const page_id_t id) {
     return hash & pager->mask;
 }
 
+/// Retrieves the header for the corresponding page id from the entries.
+/// Returns whether there exists a mapping for this page id in the entry.
 static bool
 entry_directory_lookup(const hash_entry_t* hash_entry, const page_id_t id, header_t** out) {
     assert_latch_read_access(hash_entry->latch);
@@ -125,6 +168,8 @@ entry_directory_lookup(const hash_entry_t* hash_entry, const page_id_t id, heade
     return false;
 }
 
+/// Inserts a new mapping for this header into the entry. Might allocate new
+/// buckets on overflow.
 static result_t
 pager_directory_insert(hash_entry_t* hash_entry, header_t* header) {
     assert_latch_write_access(hash_entry->latch);
@@ -160,6 +205,8 @@ pager_directory_insert(hash_entry_t* hash_entry, header_t* header) {
     }
 }
 
+/// Removes a mapping from the entry. Does not deallocate any buckets and
+/// leaves them to be reused on insertion.
 static void
 pager_directory_remove(hash_entry_t* hash_entry, const page_id_t id) {
     assert_latch_write_access(hash_entry->latch);
@@ -181,6 +228,7 @@ pager_directory_remove(hash_entry_t* hash_entry, const page_id_t id) {
     }
 }
 
+/// Creates a new page. Might allocate a new page if no evicted page can be reused.
 static result_t
 pager_create(pager_t* pager, hash_entry_t* hash_entry, const page_id_t id, header_t** out) {
     assert_latch_write_access(hash_entry->latch);
@@ -188,6 +236,8 @@ pager_create(pager_t* pager, hash_entry_t* hash_entry, const page_id_t id, heade
     while (true) {
         const uint32_t index = atomic_fetch_add(&pager->create_head, 1) % pager->size;
 
+        /// acquire the ring entry by storing the page, also ensures
+        /// syncronisation since tha latch for the entry is alredy acquired
         ring_entry_t* ring_entry = &pager->ring[index];
         page_id_t expected = 0;
         if (!atomic_compare_exchange_weak(&ring_entry->page_id, &expected, id)) {
@@ -195,16 +245,19 @@ pager_create(pager_t* pager, hash_entry_t* hash_entry, const page_id_t id, heade
         }
 
         if (ring_entry->header == nullptr) {
-            try_alloc(ring_entry->header, sizeof(header_t) + pager->page_size);
+            ring_entry->header = malloc(sizeof(header_t) + pager->page_size);
+        }
+        if (ring_entry->header == nullptr) {
+            atomic_store(&ring_entry->page_id, 0); // release ring entry on failure
+            failure(ENOMEM, msg("failed to allocate memory for page"));
         }
 
-        ring_entry->header->ring_index = index;
         ring_entry->header->id = id;
         atomic_store(&ring_entry->header->flags, 0);
         latch_init(&ring_entry->header->latch);
 
         handle(pager_directory_insert(hash_entry, ring_entry->header)) {
-            atomic_store(&ring_entry->page_id, 0);
+            atomic_store(&ring_entry->page_id, 0); // release ring entry on failure
             forward();
         }
 
@@ -214,25 +267,34 @@ pager_create(pager_t* pager, hash_entry_t* hash_entry, const page_id_t id, heade
     }
 }
 
-bool
+/// Finds the corresponding hash map entry for this ring entry. Returns true if
+/// the ring entry stores a valid mapping (i.e. the page id is not zero). Since
+/// the page id might be modified concurrently, a CAS loop is required.
+static bool
 pager_directory_find_entry(const pager_t* pager, ring_entry_t* ring_entry, hash_entry_t** out) {
     page_id_t page_id = atomic_load(&ring_entry->page_id);
 
     while (page_id != 0) {
+        // acquire the latch of the corresponding hash map entry
         hash_entry_t* hash_entry = &pager->directory[pager_hash(pager, page_id)];
         latch_acquire_write(&hash_entry->latch);
 
+        // check if the page id is still valid
         if (atomic_compare_exchange_strong(&ring_entry->page_id, &page_id, page_id)) {
             *out = hash_entry;
             return true;
         }
 
+        // otherwise release the latch of the hash map entry and try again
         latch_release_write(&hash_entry->latch);
     }
 
     return false;
 }
 
+/// Evicts a page, might fail if there are no pages that can be evicted, i.e.
+/// every page is currently fixed. Or if the thread is unlucky and loses a lot
+/// of races with other threads trying to evict pages.
 result_t
 pager_evict(pager_t* pager) {
     for (uint32_t i = 0; i < pager->size * 2; ++i) {
@@ -264,6 +326,7 @@ pager_evict(pager_t* pager) {
     failure(ENOMEM, msg("no pages to evict"));
 }
 
+/// Looks up a page in the hash map entry and acquires the page latch if found.
 bool
 pager_lookup(const hash_entry_t* hash_entry, const page_id_t id, const bool exclusive, unsigned char** out) {
     header_t* header;
