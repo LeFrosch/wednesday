@@ -9,29 +9,27 @@
 #include "winter.h"
 
 enum {
-    PAGE_FLAG_DIRTY = (1u << 1),
-    PAGE_FLAG_REF = (1u << 2),
-    PAGE_FLAG_EXCLUSIVE = (1u << 3),
+    PAGE_FLAG_DIRTY = (1u << 0),
+    PAGE_FLAG_REF = (1u << 1),
+    PAGE_FLAG_EXCLUSIVE = (1u << 2),
 };
 
-typedef uint32_t ring_id_t;
+typedef struct {
+    page_id_t id;
+    latch_t latch;
+
+    uint32_t ring_index;
+
+    _Atomic uint8_t flags;
+} header_t;
 
 typedef struct {
     page_id_t page_id;
-    ring_id_t ring_id;
+    header_t* header;
 } page_t;
 
-typedef struct {
-    _Atomic page_id_t id;
-    _Atomic uint8_t flags;
-
-    latch_t latch;
-
-    unsigned char* data;
-} ring_entry_t;
-
 typedef struct bucket {
-    page_t page;
+    page_t value;
     struct bucket* next;
 } bucket_t;
 
@@ -40,20 +38,35 @@ typedef struct {
     page_t first;
     page_t second;
     bucket_t* overflow;
-} dict_entry_t;
+} hash_entry_t;
+
+typedef struct {
+    _Atomic page_id_t page_id;
+    header_t* header;
+} ring_entry_t;
 
 struct pager_t {
     uint16_t page_size;
     uint32_t size;
     uint32_t mask;
 
+    hash_entry_t* directory;
     ring_entry_t* ring;
-    dict_entry_t* dict;
 
-    _Atomic ring_id_t ring_alloc_head;
-    _Atomic ring_id_t ring_evict_head;
     _Atomic uint32_t page_count;
+    _Atomic uint32_t evict_head;
+    _Atomic uint32_t create_head;
 };
+
+static unsigned char*
+header_get_data(const header_t* page) {
+    return (unsigned char*)(page + 1);
+}
+
+static header_t*
+header_from_data(const unsigned char* data) {
+    return (header_t*)data - 1;
+}
 
 result_t
 pager_open(pager_t* pager, const uint16_t page_size, const uint32_t directory_size) {
@@ -63,14 +76,18 @@ pager_open(pager_t* pager, const uint16_t page_size, const uint32_t directory_si
     pager->size = (uint32_t)(directory_size * 0.7);
     pager->page_count = 0;
     pager->mask = directory_size - 1;
-    pager->ring_alloc_head = 0;
-    pager->ring_evict_head = 0;
+    pager->evict_head = 0;
+    pager->create_head = 0;
 
-    try_alloc(pager->dict, sizeof(dict_entry_t) * directory_size);
-    errdefer(free, pager->dict);
+    try_alloc(pager->directory, sizeof(hash_entry_t) * directory_size);
+    errdefer(free, pager->directory);
 
     try_alloc(pager->ring, sizeof(ring_entry_t) * pager->size);
     errdefer(free, pager->ring);
+
+    for (uint32_t i = 0; i < directory_size; ++i) {
+        latch_init(&pager->directory[i].latch);
+    }
 
     return SUCCESS;
 }
@@ -86,21 +103,21 @@ pager_hash(const pager_t* pager, const page_id_t id) {
 }
 
 static bool
-entry_dict_get(const dict_entry_t* entry, const page_id_t id, page_t* out) {
-    assert_latch_read_access(entry->latch);
+entry_directory_lookup(const hash_entry_t* hash_entry, const page_id_t id, header_t** out) {
+    assert_latch_read_access(hash_entry->latch);
 
-    if (entry->first.page_id == id) {
-        *out = entry->first;
+    if (hash_entry->first.page_id == id) {
+        *out = hash_entry->first.header;
         return true;
     }
-    if (entry->second.page_id == id) {
-        *out = entry->second;
+    if (hash_entry->second.page_id == id) {
+        *out = hash_entry->second.header;
         return true;
     }
 
-    for (const bucket_t* bucket = entry->overflow; bucket != nullptr; bucket = bucket->next) {
-        if (bucket->page.page_id == id) {
-            *out = bucket->page;
+    for (const bucket_t* bucket = hash_entry->overflow; bucket != nullptr; bucket = bucket->next) {
+        if (bucket->value.page_id == id) {
+            *out = bucket->value.header;
             return true;
         }
     }
@@ -109,26 +126,29 @@ entry_dict_get(const dict_entry_t* entry, const page_id_t id, page_t* out) {
 }
 
 static result_t
-entry_dict_put(dict_entry_t* entry, page_t page) {
-    assert_latch_write_access(entry->latch);
+pager_directory_insert(hash_entry_t* hash_entry, header_t* header) {
+    assert_latch_write_access(hash_entry->latch);
 
-    if (entry->first.page_id == 0) {
-        entry->first = page;
+    if (hash_entry->first.page_id == 0) {
+        hash_entry->first.page_id = header->id;
+        hash_entry->first.header = header;
         return SUCCESS;
     }
-    if (entry->second.page_id == 0) {
-        entry->second = page;
+    if (hash_entry->second.page_id == 0) {
+        hash_entry->second.page_id = header->id;
+        hash_entry->second.header = header;
         return SUCCESS;
     }
 
-    if (entry->overflow == nullptr) {
-        try_alloc(entry->overflow, sizeof(bucket_t));
+    if (hash_entry->overflow == nullptr) {
+        try_alloc(hash_entry->overflow, sizeof(bucket_t));
     }
 
-    bucket_t* bucket = entry->overflow;
+    bucket_t* bucket = hash_entry->overflow;
     while (true) {
-        if (bucket->page.page_id == 0) {
-            bucket->page = page;
+        if (bucket->value.page_id == 0) {
+            bucket->value.page_id = header->id;
+            bucket->value.header = header;
             return SUCCESS;
         }
 
@@ -140,79 +160,127 @@ entry_dict_put(dict_entry_t* entry, page_t page) {
     }
 }
 
-static result_t
-pager_new_page(pager_t* pager, dict_entry_t* dict_entry, const page_id_t id, ring_entry_t** out) {
-    assert_latch_write_access(dict_entry->latch);
+static void
+pager_directory_remove(hash_entry_t* hash_entry, const page_id_t id) {
+    assert_latch_write_access(hash_entry->latch);
 
-    ring_id_t ring_id;
-    ring_entry_t* ring_entry;
-    while (true) {
-        ring_id = atomic_fetch_add(&pager->ring_alloc_head, 1) % pager->size;
-        ring_entry = &pager->ring[ring_id];
+    if (hash_entry->first.page_id == id) {
+        hash_entry->first.page_id = 0;
+        return;
+    }
+    if (hash_entry->second.page_id == id) {
+        hash_entry->second.page_id = 0;
+        return;
+    }
 
-        page_id_t expected = 0;
-        if (atomic_compare_exchange_weak(&ring_entry->id, &expected, id)) {
+    for (bucket_t* bucket = hash_entry->overflow; bucket != nullptr; bucket = bucket->next) {
+        if (bucket->value.page_id == id) {
+            bucket->value.page_id = 0;
             break;
         }
     }
+}
 
-    ring_entry->latch = 0;
-    ring_entry->flags = 0;
+static result_t
+pager_create(pager_t* pager, hash_entry_t* hash_entry, const page_id_t id, header_t** out) {
+    assert_latch_write_access(hash_entry->latch);
 
-    // TODO: errdefer atomic_store(&ring_entry->id, 0) ?
+    while (true) {
+        const uint32_t index = atomic_fetch_add(&pager->create_head, 1) % pager->size;
 
-    if (ring_entry->data == nullptr) {
-        ring_entry->data = malloc(pager->page_size);
-
-        if (ring_entry->data == nullptr) {
-            atomic_store(&ring_entry->id, 0);
-            failure(ENOMEM, "failed to allocate page");
+        ring_entry_t* ring_entry = &pager->ring[index];
+        page_id_t expected = 0;
+        if (!atomic_compare_exchange_weak(&ring_entry->page_id, &expected, id)) {
+            continue;
         }
+
+        if (ring_entry->header == nullptr) {
+            try_alloc(ring_entry->header, sizeof(header_t) + pager->page_size);
+        }
+
+        ring_entry->header->ring_index = index;
+        ring_entry->header->id = id;
+        atomic_store(&ring_entry->header->flags, 0);
+        latch_init(&ring_entry->header->latch);
+
+        handle(pager_directory_insert(hash_entry, ring_entry->header)) {
+            atomic_store(&ring_entry->page_id, 0);
+            forward();
+        }
+
+        *out = ring_entry->header;
+
+        return SUCCESS;
+    }
+}
+
+bool
+pager_directory_find_entry(const pager_t* pager, ring_entry_t* ring_entry, hash_entry_t** out) {
+    page_id_t page_id = atomic_load(&ring_entry->page_id);
+
+    while (page_id != 0) {
+        hash_entry_t* hash_entry = &pager->directory[pager_hash(pager, page_id)];
+        latch_acquire_write(&hash_entry->latch);
+
+        if (atomic_compare_exchange_strong(&ring_entry->page_id, &page_id, page_id)) {
+            *out = hash_entry;
+            return true;
+        }
+
+        latch_release_write(&hash_entry->latch);
     }
 
-    // store the ring id in the begining of the page
-    memcpy(ring_entry->data, &ring_id, sizeof(ring_id_t));
-
-    const page_t page = { id, ring_id };
-
-    handle(entry_dict_put(dict_entry, page)) {
-        atomic_store(&ring_entry->id, 0);
-        forward();
-    }
-
-    *out = ring_entry;
-    return SUCCESS;
+    return false;
 }
 
 result_t
-pager_evict_page(pager_t* pager) {
-    uint32_t i = atomic_load(&pager->ring_evict_head);
-    const uint32_t end = i + pager->size * 2;
+pager_evict(pager_t* pager) {
+    for (uint32_t i = 0; i < pager->size * 2; ++i) {
+        const uint32_t index = atomic_fetch_add(&pager->evict_head, 1) % pager->size;
+        ring_entry_t* ring_entry = &pager->ring[index];
 
-    while (i < end) {
-        i = atomic_fetch_add(&pager->ring_evict_head, 1);
+        hash_entry_t* entry;
+        if (!pager_directory_find_entry(pager, ring_entry, &entry)) {
+            continue;
+        }
+        defer(latch_release_write, entry->latch);
 
-        ring_entry_t* ring_entry = &pager->ring[i % pager->size];
-        dict_entry_t* dict_entry = &pager->dict[pager_hash(pager, ring_entry->id)];
-
-        latch_acquire_write(&dict_entry->latch);
-        defer(latch_release_write, dict_entry->latch);
-
-        if (!latch_available(&ring_entry->latch)) {
+        if (!latch_available(&ring_entry->header->latch)) {
             continue;
         }
 
-        const uint8_t flags = atomic_load(&ring_entry->flags);
+        const uint8_t flags = atomic_load(&ring_entry->header->flags);
         if (flags & PAGE_FLAG_REF) {
-            atomic_fetch_and(&ring_entry->flags, ~PAGE_FLAG_REF);
+            atomic_fetch_and(&ring_entry->header->flags, ~PAGE_FLAG_REF);
             continue;
         }
 
-        atomic_store(&ring_entry->id, 0);
-        atomic_store(&ring_entry->flags, 0);
+        pager_directory_remove(entry, ring_entry->page_id);
+        atomic_store(&ring_entry->page_id, 0);
+
+        return SUCCESS;
     }
 
-    failure(ENOMEM, "no pages to evict");
+    failure(ENOMEM, msg("no pages to evict"));
+}
+
+bool
+pager_lookup(const hash_entry_t* hash_entry, const page_id_t id, const bool exclusive, unsigned char** out) {
+    header_t* header;
+    if (!entry_directory_lookup(hash_entry, id, &header)) {
+        return false;
+    }
+
+    latch_acquire(&header->latch, exclusive);
+
+    if (exclusive) {
+        // only needs to be visible to this thread, latch was acquired exclusively
+        atomic_fetch_or_explicit(&header->flags, PAGE_FLAG_EXCLUSIVE, memory_order_relaxed);
+    }
+
+    *out = header_get_data(header);
+
+    return true;
 }
 
 result_t
@@ -221,71 +289,72 @@ pager_fix(pager_t* pager, const page_id_t id, const bool exclusive, unsigned cha
     ensure(out != nullptr);
 
     if (id == 0) {
-        failure(EINVAL, "invalid page id");
+        failure(EINVAL, msg("invalid page id"));
     }
 
-    ring_entry_t* ring_entry;
+    hash_entry_t* hash_entry = &pager->directory[pager_hash(pager, id)];
+    { // fast pass, try to look up the page with read-only lock
+        latch_acquire_read(&hash_entry->latch);
+        defer(latch_release_read, hash_entry->latch);
 
-    { // lock the hash table entry for this scope
-        dict_entry_t* dict_entry = &pager->dict[pager_hash(pager, id)];
-        latch_acquire(&dict_entry->latch, true);
-        defer(latch_release_write, dict_entry->latch);
-
-        page_t page;
-        if (entry_dict_get(dict_entry, id, &page)) {
-            ring_entry = &pager->ring[page.ring_id];
-        } else {
-            uint32_t count = atomic_load(&pager->page_count);
-            while (true) {
-                if (count >= pager->size) {
-                    try(pager_evict_page(pager));
-                    break;
-                }
-
-                if (atomic_compare_exchange_weak(&pager->page_count, &count, count + 1)) {
-                    break;
-                }
-            }
-
-            handle(pager_new_page(pager, dict_entry, id, &ring_entry)) {
-                atomic_fetch_sub(&pager->page_count, 1);
-                forward();
-            }
+        if (pager_lookup(hash_entry, id, exclusive, out)) {
+            return SUCCESS;
         }
     }
 
-    latch_acquire(&ring_entry->latch, exclusive);
+    // ensure that there is at least enough capacity to allocate a new page if required
+    uint32_t count = atomic_load(&pager->page_count);
+    while (true) {
+        if (count >= pager->size - 1) {
+            try(pager_evict(pager));
+            break;
+        }
 
-    if (exclusive) {
-        atomic_fetch_or(&ring_entry->flags, PAGE_FLAG_EXCLUSIVE);
+        if (atomic_compare_exchange_weak(&pager->page_count, &count, count + 1)) {
+            break;
+        }
     }
 
-    *out = ring_entry->data;
+    latch_acquire_write(&hash_entry->latch);
+    defer(latch_release_write, hash_entry->latch);
+
+    // retry the lookup after acquiring the write lock
+    if (pager_lookup(hash_entry, id, exclusive, out)) {
+        atomic_fetch_sub(&pager->page_count, 1);
+        return SUCCESS;
+    }
+
+    header_t* header;
+    handle(pager_create(pager, hash_entry, id, &header)) {
+        atomic_fetch_sub(&pager->page_count, 1);
+        forward();
+    }
+
+    latch_acquire(&header->latch, exclusive);
+
+    if (exclusive) {
+        // only needs to be visible to this thread, latch was acquired exclusively
+        atomic_fetch_or_explicit(&header->flags, PAGE_FLAG_EXCLUSIVE, memory_order_relaxed);
+    }
+
+    *out = header_get_data(header);
 
     return SUCCESS;
 }
 
-static ring_entry_t*
-pager_get_ring_entry(const pager_t* pager, const unsigned char* page) {
-    ring_id_t ring_id;
-    memcpy(&ring_id, page, sizeof(ring_id_t));
-
-    return &pager->ring[ring_id];
-}
-
 void
-pager_unfix(const pager_t* pager, const unsigned char* page) {
-    ring_entry_t* entry = pager_get_ring_entry(pager, page);
+pager_unfix(const unsigned char* data) {
+    header_t* header = header_from_data(data);
 
-    const uint8_t flags = atomic_load_explicit(&entry->flags, memory_order_relaxed);
+    const uint8_t flags = atomic_load_explicit(&header->flags, memory_order_acquire);
     if (flags & PAGE_FLAG_EXCLUSIVE) {
         // latch guarantees exclusive access, safe to do non-CAS write
-        atomic_store_explicit(&entry->flags, PAGE_FLAG_DIRTY | PAGE_FLAG_REF, memory_order_relaxed);
-        latch_release_write(&entry->latch);
+        atomic_store_explicit(&header->flags, PAGE_FLAG_DIRTY | PAGE_FLAG_REF, memory_order_relaxed);
+        latch_release_write(&header->latch);
     } else {
         // concurrent writes possible
-        atomic_fetch_or_explicit(&entry->flags, PAGE_FLAG_REF, memory_order_seq_cst);
-        latch_release_read(&entry->latch);
+        atomic_fetch_or_explicit(&header->flags, PAGE_FLAG_REF, memory_order_seq_cst);
+        latch_release_read(&header->latch);
     }
 }
 
@@ -294,22 +363,22 @@ pager_close(pager_t* pager) {
     ensure(pager != nullptr);
 
     for (uint32_t i = 0; i < pager->size; ++i) {
-        const ring_entry_t* entry = &pager->ring[i];
-        if (entry->data != nullptr) {
-            free(entry->data);
+        const ring_entry_t* ring_entry = &pager->ring[i];
+        if (ring_entry->header != nullptr) {
+            free(ring_entry->header);
         }
     }
     free(pager->ring);
 
     for (uint32_t i = 0; i <= pager->mask; ++i) {
-        bucket_t* bucket = pager->dict[i].overflow;
+        bucket_t* bucket = pager->directory[i].overflow;
         while (bucket != nullptr) {
             bucket_t* next = bucket->next;
             free(bucket);
             bucket = next;
         }
     }
-    free(pager->dict);
+    free(pager->directory);
 
     *pager = (pager_t){ 0 };
 
@@ -354,30 +423,27 @@ describe(pager) {
     it("acquire the page latch") {
         unsigned char* page;
         assert_success(pager_fix(&pager, 3, false, &page));
-        asserteq_int(pager_get_ring_entry(&pager, page)->latch, 1);
+        asserteq_int(header_from_data(page)->latch, 1);
 
         assert_success(pager_fix(&pager, 4, true, &page));
-        asserteq_int(pager_get_ring_entry(&pager, page)->latch, -1);
+        asserteq_int(header_from_data(page)->latch, -1);
     }
 
     it("fill pager") {
-        for (uint32_t i = 1; i <= pager.size; ++i) {
+        for (uint32_t i = 1; i <= pager.size - 1; ++i) {
             unsigned char* page;
             assert_success(pager_fix(&pager, i, false, &page));
         }
 
         unsigned char* page;
-        assert_failure(pager_fix(&pager, pager.size + 1, false, &page), ENOMEM);
+        assert_failure(pager_fix(&pager, pager.size, false, &page), ENOMEM);
     }
 
     parallel("fill pager", 8) {
-        for (uint32_t i = 1; i <= pager.size; ++i) {
+        for (uint32_t i = 1; i <= pager.size - 8; ++i) {
             unsigned char* page;
             assert_success(pager_fix(&pager, i, false, &page));
         }
-
-        unsigned char* page;
-        assert_failure(pager_fix(&pager, pager.size + 1, false, &page), ENOMEM);
     }
 
     it("fix invalid page id") {
@@ -388,23 +454,33 @@ describe(pager) {
     it("release the page latch") {
         unsigned char* page;
         assert_success(pager_fix(&pager, 3, false, &page));
-        asserteq_int(pager_get_ring_entry(&pager, page)->latch, 1);
+        asserteq_int(header_from_data(page)->latch, 1);
 
-        pager_unfix(&pager, page);
-        asserteq_int(pager_get_ring_entry(&pager, page)->latch, 0);
+        pager_unfix(page);
+        asserteq_int(header_from_data(page)->latch, 0);
 
         assert_success(pager_fix(&pager, 3, true, &page));
-        asserteq_int(pager_get_ring_entry(&pager, page)->latch, -1);
+        asserteq_int(header_from_data(page)->latch, -1);
 
-        pager_unfix(&pager, page);
-        asserteq_int(pager_get_ring_entry(&pager, page)->latch, 0);
+        pager_unfix(page);
+        asserteq_int(header_from_data(page)->latch, 0);
+    }
+
+    parallel("fix and unfix pages non-exclusive", 8) {
+        for (uint32_t i = 1; i <= pager.size * 10; ++i) {
+            unsigned char* page;
+            assert_success(pager_fix(&pager, i, false, &page));
+            assertis(header_from_data(page)->latch > 0);
+            pager_unfix(page);
+        }
     }
 
     parallel("fix and unfix pages exclusive", 8) {
-        for (uint32_t i = 1; i <= pager.size; ++i) {
+        for (uint32_t i = 1; i <= pager.size * 10; ++i) {
             unsigned char* page;
             assert_success(pager_fix(&pager, i, true, &page));
-            pager_unfix(&pager, page);
+            assertis(header_from_data(page)->latch == -1);
+            pager_unfix(page);
         }
     }
 }

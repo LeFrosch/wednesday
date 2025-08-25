@@ -9,10 +9,19 @@
 typedef _Atomic int32_t latch_t;
 
 void
+latch_init(latch_t* latch);
+
+void
 latch_acquire_read(latch_t* latch);
+
+bool
+latch_try_acquire_read(latch_t* latch);
 
 void
 latch_acquire_write(latch_t* latch);
+
+bool
+latch_try_acquire_write(latch_t* latch);
 
 void
 latch_acquire(latch_t* latch, bool exclusive);

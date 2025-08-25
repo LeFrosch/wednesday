@@ -52,14 +52,14 @@ error_clear(void);
 #define ensure(expr, ...)                                                                                              \
     do {                                                                                                               \
         if (!(expr)) {                                                                                                 \
-            failure(EINVAL, msg(#expr) __VA_OPT__(, __VA_ARGS__));                                                     \
+            failure(EINVAL, msg("ensure" #expr) __VA_OPT__(, __VA_ARGS__));                                            \
         }                                                                                                              \
     } while (0)
 
 #define try(expr, ...)                                                                                                 \
     do {                                                                                                               \
         if ((expr) != SUCCESS) {                                                                                       \
-            failure(error_get_code(), msg(#expr) __VA_OPT__(, __VA_ARGS__));                                           \
+            failure(error_get_code(), msg("try " #expr) __VA_OPT__(, __VA_ARGS__));                                    \
         }                                                                                                              \
     } while (0)
 
