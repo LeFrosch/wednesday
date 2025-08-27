@@ -1,11 +1,10 @@
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include "error.h"
 
 #include "assert.h"
-#include "error.h"
 #include "util.h"
 
+#include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 
 #define MAX_ERRORS 32

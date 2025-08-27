@@ -1,12 +1,13 @@
-#include <stdatomic.h>
-#include <stdbool.h>
+#include "pager.h"
 
 #include "deffer.h"
 #include "error.h"
 #include "latch.h"
-#include "pager.h"
 #include "util.h"
 #include "winter.h"
+
+#include <stdatomic.h>
+#include <stdbool.h>
 
 enum {
     /// If the page content was modified.
@@ -38,11 +39,11 @@ typedef struct {
 typedef struct {
     page_id_t page_id;
     header_t* header;
-} page_t;
+} mapping_t;
 
 /// Linked list to track hash map overflows.
 typedef struct bucket {
-    page_t value;
+    mapping_t value;
     struct bucket* next;
 } bucket_t;
 
@@ -53,10 +54,10 @@ typedef struct {
     latch_t latch;
 
     /// First slot for this hash map entry.
-    page_t first;
+    mapping_t first;
 
     /// Second slot for this hash map entry.
-    page_t second;
+    mapping_t second;
 
     /// Linked a list of further slots to track overflow.
     bucket_t* overflow;
@@ -91,6 +92,9 @@ struct pager_t {
     /// Pointer into the ring, used for page creation.
     _Atomic uint32_t create_head;
 
+    /// Temporary for tracking the next page in memory.
+    _Atomic uint32_t next_page;
+
     hash_entry_t* directory;
     ring_entry_t* ring;
 };
@@ -108,8 +112,13 @@ header_from_data(const unsigned char* data) {
 }
 
 result_t
-pager_open(pager_t* pager, const uint16_t page_size, const uint32_t directory_size) {
+pager_open(pager_t** out, const uint16_t page_size, const uint32_t directory_size) {
     ensure((directory_size & (directory_size - 1)) == 0);
+    ensure(out != nullptr);
+
+    pager_t* pager;
+    try_alloc(pager, sizeof(pager_t));
+    errdefer(free, pager);
 
     pager->page_size = page_size;
     pager->size = (uint32_t)(directory_size * 0.7);
@@ -117,6 +126,7 @@ pager_open(pager_t* pager, const uint16_t page_size, const uint32_t directory_si
     pager->mask = directory_size - 1;
     pager->evict_head = 0;
     pager->create_head = 0;
+    pager->next_page = 1;
 
     try_alloc(pager->directory, sizeof(hash_entry_t) * directory_size);
     errdefer(free, pager->directory);
@@ -128,7 +138,14 @@ pager_open(pager_t* pager, const uint16_t page_size, const uint32_t directory_si
         latch_init(&pager->directory[i].latch);
     }
 
+    *out = pager;
+
     return SUCCESS;
+}
+
+uint16_t
+pager_get_page_size(const pager_t* pager) {
+    return pager->page_size;
 }
 
 /// Simple hash function that maps the page id to hash map entries. (copied
@@ -328,7 +345,7 @@ pager_evict(pager_t* pager) {
 
 /// Looks up a page in the hash map entry and acquires the page latch if found.
 bool
-pager_lookup(const hash_entry_t* hash_entry, const page_id_t id, const bool exclusive, unsigned char** out) {
+pager_lookup(const hash_entry_t* hash_entry, const page_id_t id, const bool exclusive, page_t* out) {
     header_t* header;
     if (!entry_directory_lookup(hash_entry, id, &header)) {
         return false;
@@ -341,13 +358,13 @@ pager_lookup(const hash_entry_t* hash_entry, const page_id_t id, const bool excl
         atomic_fetch_or_explicit(&header->flags, PAGE_FLAG_EXCLUSIVE, memory_order_relaxed);
     }
 
-    *out = header_get_data(header);
+    *out = (page_t){ id, header_get_data(header) };
 
     return true;
 }
 
 result_t
-pager_fix(pager_t* pager, const page_id_t id, const bool exclusive, unsigned char** out) {
+pager_fix(pager_t* pager, const page_id_t id, const bool exclusive, page_t* out) {
     ensure(pager != nullptr);
     ensure(out != nullptr);
 
@@ -400,14 +417,25 @@ pager_fix(pager_t* pager, const page_id_t id, const bool exclusive, unsigned cha
         atomic_fetch_or_explicit(&header->flags, PAGE_FLAG_EXCLUSIVE, memory_order_relaxed);
     }
 
-    *out = header_get_data(header);
+    *out = (page_t){ id, header_get_data(header) };
 
     return SUCCESS;
 }
 
+result_t
+pager_next(pager_t* pager, page_t* out) {
+    ensure(pager != nullptr);
+    ensure(out != nullptr);
+
+    // no rollback on error, fine for this temporary solution
+    const page_id_t next_page = atomic_fetch_add(&pager->next_page, 1);
+
+    return pager_fix(pager, next_page, true, out);
+}
+
 void
-pager_unfix(const unsigned char* data) {
-    header_t* header = header_from_data(data);
+pager_unfix(const page_t page) {
+    header_t* header = header_from_data(page.data);
 
     const uint8_t flags = atomic_load_explicit(&header->flags, memory_order_acquire);
     if (flags & PAGE_FLAG_EXCLUSIVE) {
@@ -422,8 +450,10 @@ pager_unfix(const unsigned char* data) {
 }
 
 result_t
-pager_close(pager_t* pager) {
-    ensure(pager != nullptr);
+pager_close(pager_t** out) {
+    ensure(out != nullptr);
+
+    pager_t* pager = *out;
 
     for (uint32_t i = 0; i < pager->size; ++i) {
         const ring_entry_t* ring_entry = &pager->ring[i];
@@ -443,13 +473,14 @@ pager_close(pager_t* pager) {
     }
     free(pager->directory);
 
-    *pager = (pager_t){ 0 };
+    free(pager);
+    *out = nullptr;
 
     return SUCCESS;
 }
 
 describe(pager) {
-    static pager_t pager;
+    static pager_t* pager;
 
     before_each() {
         assert_success(pager_open(&pager, 124, 64));
@@ -460,89 +491,101 @@ describe(pager) {
         error_clear();
     }
 
+    it("alignment") {
+        // the buffer for the page and header is allocated by malloc with
+        // the correct alignment, so the header size has to be a multiple of
+        // the guaranteed alignment in order for the data to have the right
+        // alignment
+        assertis(sizeof(header_t) % PAGE_ALIGNMENT == 0);
+    }
+
     it("fix a page") {
-        unsigned char* page;
-        assert_success(pager_fix(&pager, 3, false, &page));
+        page_t page;
+        assert_success(pager_fix(pager, 3, false, &page));
+        asserteq_uint(page.id, 3);
+        assertis((intptr_t)page.data % PAGE_ALIGNMENT == 0);
     }
 
     it("fix the same page twice") {
-        unsigned char* first;
-        assert_success(pager_fix(&pager, 3, false, &first));
-        unsigned char* second;
-        assert_success(pager_fix(&pager, 3, false, &second));
+        page_t first;
+        assert_success(pager_fix(pager, 3, false, &first));
+        page_t second;
+        assert_success(pager_fix(pager, 3, false, &second));
 
-        asserteq_ptr(first, second);
+        asserteq_uint(first.id, second.id);
+        asserteq_ptr(first.data, second.data);
     }
 
     it("fix two different pages") {
-        unsigned char* first;
-        assert_success(pager_fix(&pager, 3, false, &first));
-        unsigned char* second;
-        assert_success(pager_fix(&pager, 4, false, &second));
+        page_t first;
+        assert_success(pager_fix(pager, 3, false, &first));
+        page_t second;
+        assert_success(pager_fix(pager, 4, false, &second));
 
-        assertneq_ptr(first, second);
+        assertneq_uint(first.id, second.id);
+        assertneq_ptr(first.data, second.data);
     }
 
     it("acquire the page latch") {
-        unsigned char* page;
-        assert_success(pager_fix(&pager, 3, false, &page));
-        asserteq_int(header_from_data(page)->latch, 1);
+        page_t page;
+        assert_success(pager_fix(pager, 3, false, &page));
+        asserteq_int(header_from_data(page.data)->latch, 1);
 
-        assert_success(pager_fix(&pager, 4, true, &page));
-        asserteq_int(header_from_data(page)->latch, -1);
+        assert_success(pager_fix(pager, 4, true, &page));
+        asserteq_int(header_from_data(page.data)->latch, -1);
     }
 
     it("fill pager") {
-        for (uint32_t i = 1; i <= pager.size - 1; ++i) {
-            unsigned char* page;
-            assert_success(pager_fix(&pager, i, false, &page));
+        for (uint32_t i = 1; i <= pager->size - 1; ++i) {
+            page_t page;
+            assert_success(pager_fix(pager, i, false, &page));
         }
 
-        unsigned char* page;
-        assert_failure(pager_fix(&pager, pager.size, false, &page), ENOMEM);
+        page_t page;
+        assert_failure(pager_fix(pager, pager->size, false, &page), ENOMEM);
     }
 
     parallel("fill pager", 8) {
-        for (uint32_t i = 1; i <= pager.size - 8; ++i) {
-            unsigned char* page;
-            assert_success(pager_fix(&pager, i, false, &page));
+        for (uint32_t i = 1; i <= pager->size - 8; ++i) {
+            page_t page;
+            assert_success(pager_fix(pager, i, false, &page));
         }
     }
 
     it("fix invalid page id") {
-        unsigned char* page;
-        assert_failure(pager_fix(&pager, 0, true, &page), EINVAL);
+        page_t page;
+        assert_failure(pager_fix(pager, 0, true, &page), EINVAL);
     }
 
     it("release the page latch") {
-        unsigned char* page;
-        assert_success(pager_fix(&pager, 3, false, &page));
-        asserteq_int(header_from_data(page)->latch, 1);
+        page_t page;
+        assert_success(pager_fix(pager, 3, false, &page));
+        asserteq_int(header_from_data(page.data)->latch, 1);
 
         pager_unfix(page);
-        asserteq_int(header_from_data(page)->latch, 0);
+        asserteq_int(header_from_data(page.data)->latch, 0);
 
-        assert_success(pager_fix(&pager, 3, true, &page));
-        asserteq_int(header_from_data(page)->latch, -1);
+        assert_success(pager_fix(pager, 3, true, &page));
+        asserteq_int(header_from_data(page.data)->latch, -1);
 
         pager_unfix(page);
-        asserteq_int(header_from_data(page)->latch, 0);
+        asserteq_int(header_from_data(page.data)->latch, 0);
     }
 
     parallel("fix and unfix pages non-exclusive", 8) {
-        for (uint32_t i = 1; i <= pager.size * 10; ++i) {
-            unsigned char* page;
-            assert_success(pager_fix(&pager, i, false, &page));
-            assertis(header_from_data(page)->latch > 0);
+        for (uint32_t i = 1; i <= pager->size * 10; ++i) {
+            page_t page;
+            assert_success(pager_fix(pager, i, false, &page));
+            assertis(header_from_data(page.data)->latch > 0);
             pager_unfix(page);
         }
     }
 
     parallel("fix and unfix pages exclusive", 8) {
-        for (uint32_t i = 1; i <= pager.size * 10; ++i) {
-            unsigned char* page;
-            assert_success(pager_fix(&pager, i, true, &page));
-            assertis(header_from_data(page)->latch == -1);
+        for (uint32_t i = 1; i <= pager->size * 10; ++i) {
+            page_t page;
+            assert_success(pager_fix(pager, i, true, &page));
+            assertis(header_from_data(page.data)->latch == -1);
             pager_unfix(page);
         }
     }

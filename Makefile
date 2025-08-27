@@ -16,17 +16,17 @@ endif
 
 DEBUG_FLAGS += $(SANITIZER)
 
-SRCS := $(addprefix src/, pager.c error.c latch.c)
+SRCS := $(addprefix src/, pager.c error.c latch.c btree.c uuid.c varint.c blob.c)
 INCLUDES := $(wildcard include/*.h)
 
 LIB_OBJS := $(SRCS:src/%.c=build/lib/%.o)
 TEST_OBJS := $(SRCS:src/%.c=build/test/%.o) build/test/test.o
 
-$(LIB_OBJS): build/lib/%.o: src/%.c $(INCLUDES)
+build/lib/%.o: src/%.c $(INCLUDES)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(TEST_OBJS): build/test/%.o: src/%.c $(INCLUDES) 
+build/test/%.o: src/%.c $(INCLUDES)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(DEBUG_FLAGS) -DWINTER_ENABLED -c -o $@ $<
 
@@ -36,7 +36,7 @@ lib.so: $(LIB_OBJS)
 lib.dylib: $(LIB_OBJS)
 	$(CC) -dynamiclib $^ -o $@
 
-test: $(TEST_OBJS) build/test/test.o
+test: $(TEST_OBJS)
 	$(CC) $(SANITIZER) $^ -o $@
 
 clean:

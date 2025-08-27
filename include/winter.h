@@ -843,7 +843,9 @@ _winter_main(const int argc, const char** argv) {
     ) {                                                                                                                \
         const bool eq = (a) == (b);                                                                                    \
         if (!eq && !invert) {                                                                                          \
-            _winter_fail_expl(explanation, "(" #name ") Expected %s to equal %s, but got " pattern, a_str, b_str, a);  \
+            _winter_fail_expl(                                                                                         \
+              explanation, "(" #name ") Expected %s to equal %s (" pattern "), but got " pattern, a_str, b_str, b, a   \
+            );                                                                                                         \
         }                                                                                                              \
         if (eq && invert) {                                                                                            \
             _winter_fail_expl(explanation, "(" #name ") Expected %s to not equal %s (" pattern ")", a_str, b_str, a);  \
@@ -868,7 +870,7 @@ _winter_assert_str(
 ) {
     const bool eq = strcmp(a, b) == 0;
     if (!eq && !invert) {
-        _winter_fail_expl(explanation, "(str) Expected %s to equal %s, but got \"%s\"", a_str, b_str, a);
+        _winter_fail_expl(explanation, "(str) Expected %s to equal %s (\"%s\"), but got \"%s\"", a_str, b_str, b, a);
     }
     if (eq && invert) {
         _winter_fail_expl(explanation, "(str) Expected %s to not equal %s (\"%s\")", a_str, b_str, a);
@@ -1002,12 +1004,16 @@ _winter_assert_str(
       const uint64_t index __attribute__((unused)), winter_array_t* out __attribute__((unused))                        \
     )
 
+#define TEST_ONLY
+
 #else
 
 #define describe(name)                                                                                                 \
     WINTER_FUNC void _winter_unused_##name(                                                                            \
       const uint64_t index __attribute__((unused)), winter_array_t* out __attribute__((unused))                        \
     )
+
+#define TEST_ONLY __attribute__((unused, deprecated("should not be used outside of tests")))
 
 #endif
 
